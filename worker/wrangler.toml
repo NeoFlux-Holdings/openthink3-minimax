@@ -1,0 +1,41 @@
+name = "openthink3-worker"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+# Bind to Workers AI
+[ai]
+binding = "AI"
+
+# Bind to KV for memories and learning
+[[kv_namespaces]]
+binding = "MEMORIES"
+id = "4239437890d8481abd708bd4bdf80890"
+
+# Bind to KV for cloud-sync artifacts (worker bundles, manifests, deploy history).
+# Create with: npx wrangler kv:namespace create ARTIFACTS
+# Then replace the placeholder id below.
+[[kv_namespaces]]
+binding = "ARTIFACTS"
+id = "00000000000000000000000000000000"
+
+# Bind to Durable Objects for Thread state
+[[durable_objects.bindings]]
+name = "THREAD_DO"
+class_name = "ThreadDO"
+
+[[durable_objects.bindings]]
+name = "ORCHESTRATOR_DO"
+class_name = "OrchestratorDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["ThreadDO", "OrchestratorDO"]
+
+# Non-secret environment variables. Set with:
+#   npx wrangler secret put CF_API_TOKEN
+#   npx wrangler secret put GH_TOKEN
+# and via `npx wrangler deploy` env={...} for the vars below.
+[vars]
+CF_ACCOUNT_ID = ""
+GH_REPO = "NeoFlux-Holdings/openthink3-minimax"

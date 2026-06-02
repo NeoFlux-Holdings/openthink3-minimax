@@ -1,0 +1,26 @@
+{
+  "ignore": {
+    "files": [
+      "worker/.wrangler/**",
+      "dist/**",
+      "public/worker-bundle.js",
+      "public/worker-bundle.meta.json",
+      "**/*.test.ts",
+      "**/*.test.tsx",
+      "scripts/**"
+    ],
+    "rules": [
+      "react-doctor/rn-*",
+      "react-doctor/expo-*",
+      "react-doctor/nextjs-*",
+      "react-doctor/tanstack-start-*",
+      "react-doctor/server-*",
+      "react-doctor/jotai-*",
+      "react-doctor/redux-*",
+      "react-doctor/query-*",
+      "react-doctor/zod-v4-*",
+      "react-doctor/preact-*",
+      "react-doctor/jsx-no-target-blank"
+    ]
+  }
+}
