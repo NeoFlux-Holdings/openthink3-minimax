@@ -300,7 +300,7 @@ function corsHeaders() {
   return {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-CF-Token, X-CF-Account-Id",
   };
 }
 
@@ -603,16 +603,39 @@ async function appendHistory(env: Env, entry: HistoryEntry): Promise<void> {
   await env.ARTIFACTS.put(`history:${entry.id}`, JSON.stringify(entry));
 }
 
-async function cfFetch(env: Env, path: string, init: RequestInit = {}): Promise<any> {
-  if (!env.CF_API_TOKEN) throw new Error("CF_API_TOKEN secret is not configured on this worker");
-  if (!env.CF_ACCOUNT_ID) throw new Error("CF_ACCOUNT_ID var is not configured on this worker");
+function resolveCfCreds(env: Env, request: Request): {
+  token: string | null;
+  accountId: string | null;
+  source: "header" | "env" | "none";
+} {
+  const headerToken = request.headers.get("X-CF-Token");
+  const headerAccount = request.headers.get("X-CF-Account-Id");
+  const token = headerToken || env.CF_API_TOKEN || null;
+  const accountId = headerAccount || env.CF_ACCOUNT_ID || null;
+  let source: "header" | "env" | "none" = "none";
+  if (headerToken || headerAccount) source = "header";
+  else if (token || accountId) source = "env";
+  return { token, accountId, source };
+}
+
+async function cfFetch(
+  env: Env,
+  request: Request,
+  path: string,
+  init: RequestInit = {}
+): Promise<any> {
+  const { token, accountId } = resolveCfCreds(env, request);
+  if (!token) throw new Error("CF credentials missing: provide X-CF-Token header or set CF_API_TOKEN env var");
+  if (!accountId) throw new Error("CF credentials missing: provide X-CF-Account-Id header or set CF_ACCOUNT_ID env var");
   const url = `https://api.cloudflare.com/client/v4${path}`;
+  const initHeaders = (init.headers as Record<string, string>) || {};
+  const contentType = initHeaders["Content-Type"] || initHeaders["content-type"] || "application/json";
   const r = await fetch(url, {
     ...init,
     headers: {
-      ...(init.headers || {}),
-      "Authorization": `Bearer ${env.CF_API_TOKEN}`,
-      "Content-Type": "application/json",
+      ...initHeaders,
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": contentType,
     },
   });
   const data: any = await r.json();
@@ -624,7 +647,7 @@ async function cfFetch(env: Env, path: string, init: RequestInit = {}): Promise<
 }
 
 async function ghFetch(env: Env, path: string, init: RequestInit = {}): Promise<any> {
-  if (!env.GH_TOKEN) throw new Error("GH_TOKEN secret is not configured on this worker");
+  if (!env.GH_TOKEN) throw new Error("GH_TOKEN secret is not configured on this worker (migrating to GitHub App)");
   const url = `https://api.github.com${path}`;
   const r = await fetch(url, {
     ...init,
@@ -650,6 +673,7 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
 
   // ── /api/cf/status — diagnostic (what's configured, what's not)
   if (subpath === "/status" && method === "GET") {
+    const { source } = resolveCfCreds(env, request);
     return jsonResp({
       ok: true,
       configured: {
@@ -659,13 +683,63 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
         GH_REPO: env.GH_REPO || null,
         ARTIFACTS_KV: !!env.ARTIFACTS,
       },
+      credentialsSource: source,
       manifest: await loadManifest(env),
     });
   }
 
+  // ── /api/cf/resolve-account — discover account/zones for a per-request token
+  if (subpath === "/resolve-account" && method === "POST") {
+    const body = await request.json().catch(() => ({})) as { token?: string };
+    const token = body?.token;
+    if (!token || typeof token !== "string") {
+      return jsonResp({ error: "Body must include { token: string }" }, 400);
+    }
+    const cfHeaders = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+    try {
+      const accountsRes: any = await fetch("https://api.cloudflare.com/client/v4/accounts?per_page=50", { headers: cfHeaders }).then(r => r.json());
+      if (!accountsRes.success) {
+        const msg = (accountsRes.errors || []).map((e: any) => e.message).join("; ") || "Failed to list accounts";
+        return jsonResp({ error: msg }, 502);
+      }
+      const account = (accountsRes.result || [])[0];
+      if (!account) {
+        return jsonResp({ error: "No accounts found for this token" }, 404);
+      }
+      const accountId: string = account.id;
+      const probe = async (url: string): Promise<any> => {
+        try {
+          const r = await fetch(url, { headers: cfHeaders });
+          return await r.json();
+        } catch {
+          return { success: false, result: [] };
+        }
+      };
+      const [zonesRes, workersRes, pagesRes] = await Promise.all([
+        probe("https://api.cloudflare.com/client/v4/zones?per_page=50"),
+        probe(`https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/scripts?per_page=1`),
+        probe(`https://api.cloudflare.com/client/v4/accounts/${accountId}/pages/projects?per_page=1`),
+      ]);
+      const zones = (zonesRes.result || []).map((z: any) => ({
+        id: z.id, name: z.name, status: z.status,
+      }));
+      return jsonResp({
+        ok: true,
+        accountId,
+        accountName: account.name,
+        email: account.owner?.email ?? null,
+        hasWorkers: Array.isArray(workersRes.result) && workersRes.result.length > 0,
+        hasPages: Array.isArray(pagesRes.result) && pagesRes.result.length > 0,
+        zones,
+      });
+    } catch (err: any) {
+      return jsonResp({ error: err?.message ?? String(err) }, 500);
+    }
+  }
+
   // ── /api/cf/zones — list user's Cloudflare zones (live)
   if (subpath === "/zones" && method === "GET") {
-    const data = await cfFetch(env, "/zones?per_page=50");
+    const data = await cfFetch(env, request, "/zones?per_page=50");
     const zones = (data.result || []).map((z: any) => ({
       id: z.id, name: z.name, status: z.status,
     }));
@@ -674,14 +748,16 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
 
   // ── /api/cf/workers — list existing worker scripts
   if (subpath === "/workers" && method === "GET") {
-    const data = await cfFetch(env, `/accounts/${env.CF_ACCOUNT_ID}/workers/scripts`);
+    const { accountId } = resolveCfCreds(env, request);
+    if (!accountId) return jsonResp({ error: "CF account ID required. Provide X-CF-Account-Id header or set CF_ACCOUNT_ID env var." }, 400);
+    const data = await cfFetch(env, request, `/accounts/${accountId}/workers/scripts`);
     const workers = (data.result || []).map((w: any) => ({
       id: w.id, created_on: w.created_on, modified_on: w.modified_on,
     }));
     // Try to enrich each with details (best-effort; ignore errors).
     const enriched = await Promise.all(workers.map(async (w: any) => {
       try {
-        const d = await cfFetch(env, `/accounts/${env.CF_ACCOUNT_ID}/workers/scripts/${w.id}`);
+        const d = await cfFetch(env, request, `/accounts/${accountId}/workers/scripts/${w.id}`);
         return { ...w, etag: d.result?.etag, handlers: d.result?.handlers?.length ?? 0, size: d.result?.size };
       } catch { return w; }
     }));
@@ -749,37 +825,14 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
     if (!deployCode) {
       return jsonResp({ error: "No bundle to deploy. POST one to /api/cf/bundle/worker first." }, 400);
     }
+    const { accountId } = resolveCfCreds(env, request);
+    if (!accountId) return jsonResp({ error: "CF account ID required. Provide X-CF-Account-Id header or set CF_ACCOUNT_ID env var." }, 400);
     const scriptName = body.scriptName || "openthink3-worker";
-    const putRes = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/workers/scripts/${scriptName}`,
-      {
-        method: "PUT",
-        headers: {
-          "Authorization": `Bearer ${env.CF_API_TOKEN}`,
-          "Content-Type": "application/javascript",
-        },
-        body: deployCode,
-      }
-    );
-    const putData: any = await putRes.json();
-    if (!putData.success) {
-      const err = (putData.errors || []).map((e: any) => e.message).join("; ") || `CF API ${putRes.status}`;
-      await appendHistory(env, {
-        id: `deploy-err-${Date.now()}`,
-        ts: Date.now(),
-        actor: "user",
-        type: "deploy",
-        ok: false,
-        summary: `Deploy failed: ${err}`,
-        details: { scriptName, sha: deployMeta?.sha256 ?? null },
-      });
-      return jsonResp({ error: err, details: putData }, 502);
-    }
-    // Promote staged → current
-    await env.ARTIFACTS.put("worker:current", deployCode, {
-      metadata: deployMeta,
+    const putData = await cfFetch(env, request, `/accounts/${accountId}/workers/scripts/${scriptName}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/javascript" },
+      body: deployCode,
     });
-    await env.ARTIFACTS.delete("worker:staged");
     const manifest = {
       version: Date.now(),
       deployedAt: new Date().toISOString(),
@@ -790,16 +843,21 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
       message: body.message ?? null,
       deploymentId: putData.result?.id ?? null,
     };
-    await env.ARTIFACTS.put("manifest", JSON.stringify(manifest));
-    await appendHistory(env, {
-      id: `deploy-${Date.now()}`,
-      ts: Date.now(),
-      actor: "user",
-      type: "deploy",
-      ok: true,
-      summary: `Deployed ${scriptName} (${(deployCode.length / 1024).toFixed(1)} KB)`,
-      details: { scriptName, deploymentId: manifest.deploymentId, sha: manifest.sha256, message: body.message ?? null },
-    });
+    // Promote staged → current, delete staged, write manifest, append history — all independent writes
+    await Promise.all([
+      env.ARTIFACTS.put("worker:current", deployCode, { metadata: deployMeta }),
+      env.ARTIFACTS.delete("worker:staged"),
+      env.ARTIFACTS.put("manifest", JSON.stringify(manifest)),
+      appendHistory(env, {
+        id: `deploy-${Date.now()}`,
+        ts: Date.now(),
+        actor: "user",
+        type: "deploy",
+        ok: true,
+        summary: `Deployed ${scriptName} (${(deployCode.length / 1024).toFixed(1)} KB)`,
+        details: { scriptName, deploymentId: manifest.deploymentId, sha: manifest.sha256, message: body.message ?? null },
+      }),
+    ]);
     return jsonResp({ ok: true, manifest });
   }
 
@@ -808,7 +866,9 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
     const body = await request.json().catch(() => ({})) as { projectName?: string; branch?: string };
     if (!body.projectName) return jsonResp({ error: "projectName required" }, 400);
     const branch = body.branch || "main";
-    const list = await cfFetch(env, `/accounts/${env.CF_ACCOUNT_ID}/pages/projects/${body.projectName}/deployments?per_page=1`);
+    const { accountId } = resolveCfCreds(env, request);
+    if (!accountId) return jsonResp({ error: "CF account ID required. Provide X-CF-Account-Id header or set CF_ACCOUNT_ID env var." }, 400);
+    const list = await cfFetch(env, request, `/accounts/${accountId}/pages/projects/${body.projectName}/deployments?per_page=1`);
     await appendHistory(env, {
       id: `pages-${Date.now()}`,
       ts: Date.now(),

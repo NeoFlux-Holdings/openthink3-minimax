@@ -23,6 +23,8 @@ interface Plugin {
 }
 
 const getApiUrl = () => {
+  const custom = localStorage.getItem('openthink_api_url');
+  if (custom) return custom.endsWith('/') ? custom.slice(0, -1) : custom;
   if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') return 'http://127.0.0.1:8787';
   return 'https://openthink3-worker.thomas-zarebczan.workers.dev';
 };

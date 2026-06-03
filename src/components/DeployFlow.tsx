@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Server, Globe } from 'lucide-react';
 import {
@@ -6,14 +7,17 @@ import {
   SubdomainInput,
   BindingPreview,
   AdvancedSettings,
+  Step0CloudflareConnect,
   Step1NameAgent,
   Step2CloudflareAccess,
   Step4Review,
   DeployProgress,
 } from './DeployFlowParts';
 import { useDeployFlow } from '../hooks/useDeployFlow';
+import { getCfCreds, type CfCreds } from '../lib/cfCreds';
 
 const DeployFlow = () => {
+  const [creds, setCreds] = useState<CfCreds | null>(() => getCfCreds());
   const {
     step, setStep,
     agentName, setAgentName,
@@ -30,6 +34,21 @@ const DeployFlow = () => {
     maxStepReached,
     handleDeploy,
   } = useDeployFlow();
+
+  if (!creds) {
+    return (
+      <div style={{ minHeight: '100vh', background: 'var(--bg-primary)', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '64px 24px' }}>
+        <Link to="/" className="back-link">
+          <Server size={20} color="var(--accent-primary)" /> OpenThink Deploy
+        </Link>
+        <div style={{ maxWidth: '600px', width: '100%', marginTop: '40px' }}>
+          <div className="glass-panel" style={{ padding: '40px', borderRadius: 'var(--radius-lg)' }}>
+            <Step0CloudflareConnect onConnected={setCreds} />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg-primary)', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '64px 24px' }}>

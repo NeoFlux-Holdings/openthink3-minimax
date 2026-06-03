@@ -1,8 +1,10 @@
-import { useEffect, useReducer, useCallback } from 'react';
+import { useEffect, useReducer, useCallback, useState } from 'react';
+import { Cloud, RefreshCw } from 'lucide-react';
 import {
-  Cloud, Upload, Download, GitPullRequest, RefreshCw,
-  Check, AlertCircle, History, Package, Terminal, Cpu
-} from 'lucide-react';
+  CfConnectionBanner, CfDiagnostics, CfLocalRemote,
+  CfActionButtons, CfHistoryList, CfActivityLog,
+} from './CloudflareSyncPanelParts';
+import { getCfCreds, setCfCreds, clearCfCreds, cfAuthHeaders, resolveAccount, type CfCreds } from '../lib/cfCreds';
 
 /* ------------------------------------------------------------------ */
 /* CloudflareSyncPanel                                                 */
@@ -11,7 +13,8 @@ import {
  * Bidirectional sync between the local OpenThink build and the
  * Cloudflare account that owns the deployed agent. Backed by the
  * `/api/cf/*` endpoints on the worker (which proxy to the real
- * Cloudflare REST API + GitHub API using server-side secrets).
+ * Cloudflare REST API + GitHub API using per-user X-CF-Token /
+ * X-CF-Account-Id headers, with env-secret fallback).
  *
  *   Pull  → fetch the latest manifest from the worker KV
  *   Push  → bundle worker locally, upload to `worker:staged`, deploy via CF API
@@ -21,10 +24,10 @@ import {
  * a clear "local vs remote" diff after a refresh.
  */
 
-const API_BASE = (() => {
+function getApiBase(): string {
   if (typeof window === 'undefined') return '';
   return localStorage.getItem('openthink_api_url') || `${window.location.origin}`;
-})();
+}
 
 interface Manifest {
   version: number;
@@ -80,10 +83,12 @@ const LSK = {
   apiOverride: 'openthink_api_url',
 };
 
-async function api(path: string, init: RequestInit = {}, base = API_BASE): Promise<any> {
+async function api(path: string, init: RequestInit = {}, base: string = getApiBase()): Promise<any> {
+  const isCf = path.startsWith('/api/cf/');
+  const cfHeaders = isCf ? cfAuthHeaders() : {};
   const r = await fetch(`${base}${path}`, {
     ...init,
-    headers: { 'Content-Type': 'application/json', ...(init.headers || {}) },
+    headers: { 'Content-Type': 'application/json', ...cfHeaders, ...(init.headers || {}) },
   });
   const text = await r.text();
   let data: any;
@@ -93,6 +98,15 @@ async function api(path: string, init: RequestInit = {}, base = API_BASE): Promi
     throw new Error(msg);
   }
   return data;
+}
+
+async function apiFetchRaw(path: string, init: RequestInit = {}, base: string = getApiBase()): Promise<Response> {
+  const isCf = path.startsWith('/api/cf/');
+  const cfHeaders = isCf ? cfAuthHeaders() : {};
+  return fetch(`${base}${path}`, {
+    ...init,
+    headers: { ...cfHeaders, ...(init.headers || {}) },
+  });
 }
 
 function relTime(ts: number | null | undefined): string {
@@ -114,19 +128,6 @@ function fmtBytes(n: number | null | undefined): string {
 function shortSha(s: string | null | undefined): string {
   if (!s) return '—';
   return s.length > 12 ? `${s.slice(0, 10)}…` : s;
-}
-
-function StatusDot({ ok, label }: { ok: boolean; label: string }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.75rem', color: ok ? '#10B981' : 'var(--text-tertiary)' }}>
-      <div style={{
-        width: 7, height: 7, borderRadius: '50%',
-        background: ok ? '#10B981' : 'var(--text-tertiary)',
-        boxShadow: ok ? '0 0 6px #10B981' : 'none',
-      }} />
-      {label}
-    </div>
-  );
 }
 
 type State = {
@@ -177,7 +178,32 @@ function reducer(state: State, action: Action): State {
 }
 
 export default function CloudflareSyncPanel({ apiBase }: CloudflareSyncPanelProps) {
-  const base = apiBase || API_BASE;
+  const base = apiBase || getApiBase();
+  const [creds, setCredsState] = useState<CfCreds | null>(() => getCfCreds());
+  const [connectToken, setConnectToken] = useState('');
+  const [connectBusy, setConnectBusy] = useState(false);
+  const [connectError, setConnectError] = useState<string | null>(null);
+
+  const handleConnect = async () => {
+    if (!connectToken.trim()) return;
+    setConnectBusy(true);
+    setConnectError(null);
+    try {
+      const resolved = await resolveAccount(connectToken.trim());
+      setCfCreds(resolved);
+      setCredsState(resolved);
+      setConnectToken('');
+    } catch (e: any) {
+      setConnectError(e.message || String(e));
+    } finally {
+      setConnectBusy(false);
+    }
+  };
+
+  const handleDisconnect = () => {
+    clearCfCreds();
+    setCredsState(null);
+  };
   const [state, dispatch] = useReducer(reducer, undefined, () => ({
     status: null,
     manifest: null,
@@ -229,7 +255,7 @@ export default function CloudflareSyncPanel({ apiBase }: CloudflareSyncPanelProp
     setBusy('pull');
     setError(null);
     try {
-      const r = await fetch(`${base}/api/cf/bundle/worker`);
+      const r = await apiFetchRaw('/api/cf/bundle/worker');
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
         throw new Error(err.error || `HTTP ${r.status}`);
@@ -324,7 +350,7 @@ export default function CloudflareSyncPanel({ apiBase }: CloudflareSyncPanelProp
   const inSync = !!localSha && localSha === remoteSha;
 
   return (
-    <div className="glass-panel" style={{ padding: '20px', borderRadius: '12px', background: 'rgba(36,36,36,0.3)', border: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+    <div className="cf-sync-panel">
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <Cloud size={20} color="var(--accent-primary)" />
@@ -341,121 +367,41 @@ export default function CloudflareSyncPanel({ apiBase }: CloudflareSyncPanelProp
         </button>
       </div>
 
-      {/* Diagnostics: what is configured on the worker */}
-      {status && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8 }}>
-          <StatusDot ok={status.configured.CF_API_TOKEN} label={`CF API token ${status.configured.CF_API_TOKEN ? 'set' : 'missing'}`} />
-          <StatusDot ok={status.configured.CF_ACCOUNT_ID} label={`CF account id ${status.configured.CF_ACCOUNT_ID ? 'set' : 'missing'}`} />
-          <StatusDot ok={status.configured.GH_TOKEN} label={`GitHub token ${status.configured.GH_TOKEN ? 'set' : 'missing'}`} />
-          <StatusDot ok={status.configured.ARTIFACTS_KV} label="ARTIFACTS KV" />
-          <StatusDot ok={!!status.configured.GH_REPO} label={status.configured.GH_REPO || 'GH_REPO missing'} />
-        </div>
-      )}
+      <CfConnectionBanner
+        creds={creds}
+        connectToken={connectToken}
+        connectBusy={connectBusy}
+        connectError={connectError}
+        onTokenChange={setConnectToken}
+        onConnect={handleConnect}
+        onDisconnect={handleDisconnect}
+      />
 
-      {/* Local vs Remote state */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-subtle)', borderRadius: 8, padding: 12 }}>
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 700, marginBottom: 6 }}>Local</div>
-          <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontFamily: 'monospace' }}>
-            sha {shortSha(localMeta?.sha256 || localSha)}
-          </div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginTop: 4 }}>
-            {localMeta ? fmtBytes(localMeta.bytes) : '—'} · built {localMeta ? relTime(new Date(localMeta.builtAt).getTime()) : 'never'}
-          </div>
-        </div>
-        <div style={{
-          background: 'rgba(255,255,255,0.02)',
-          border: `1px solid ${inSync ? 'rgba(16, 185, 129, 0.4)' : 'rgba(245, 158, 11, 0.4)'}`,
-          borderRadius: 8, padding: 12,
-        }}>
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 700, marginBottom: 6 }}>Remote</div>
-          <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontFamily: 'monospace' }}>
-            sha {shortSha(remoteSha)}
-          </div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginTop: 4 }}>
-            {fmtBytes(manifest?.bytes)} · deployed {relTime(manifest?.deployedAt ? new Date(manifest.deployedAt).getTime() : null)}
-          </div>
-        </div>
-      </div>
+      <CfDiagnostics status={status} />
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.75rem' }}>
-        {inSync ? (
-          <><Check size={14} color="#10B981" /> <span style={{ color: '#10B981' }}>Local and remote are in sync</span></>
-        ) : (
-          <><AlertCircle size={14} color="#F59E0B" /> <span style={{ color: '#F59E0B' }}>Local and remote differ - push or pull to reconcile</span></>
-        )}
-        {staged && (
-          <span style={{ marginLeft: 12, padding: '2px 8px', background: 'rgba(245, 158, 11, 0.15)', color: '#F59E0B', borderRadius: 4, fontWeight: 600 }}>
-            bundle staged
-          </span>
-        )}
-      </div>
+      <CfLocalRemote
+        localSha={localSha}
+        localMeta={localMeta}
+        remoteSha={remoteSha}
+        manifest={manifest}
+        inSync={inSync}
+        staged={staged}
+        shortSha={shortSha}
+        fmtBytes={fmtBytes}
+        relTime={relTime}
+      />
 
-      {/* Action buttons */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-        <button type="button"
-          className="btn btn-ghost"
-          onClick={handlePull}
-          disabled={!!busy}
-          style={{ flex: '1 1 130px', minHeight: 40, gap: 6 }}
-        >
-          <Download size={14} /> {busy === 'pull' ? 'Pulling…' : 'Pull from Cloud'}
-        </button>
-        <button type="button"
-          className="btn btn-primary"
-          onClick={handlePush}
-          disabled={!!busy}
-          style={{ flex: '1 1 130px', minHeight: 40, gap: 6 }}
-        >
-          <Upload size={14} /> {busy === 'push' ? 'Pushing…' : 'Push to Cloud'}
-        </button>
-        <button type="button"
-          className="btn btn-ghost"
-          onClick={handleAgentPR}
-          disabled={!!busy || !status?.configured.GH_TOKEN}
-          title={!status?.configured.GH_TOKEN ? 'GH_TOKEN not configured' : 'Open a GitHub PR via the agent'}
-          style={{ flex: '1 1 130px', minHeight: 40, gap: 6 }}
-        >
-          <GitPullRequest size={14} /> {busy === 'pr' ? 'Submitting…' : 'Agent PR'}
-        </button>
-      </div>
+      <CfActionButtons
+        busy={busy}
+        ghTokenConfigured={!!status?.configured.GH_TOKEN}
+        onPull={handlePull}
+        onPush={handlePush}
+        onAgentPR={handleAgentPR}
+      />
 
-      {/* History (last 5) */}
-      {history.length > 0 && (
-        <div>
-          <div className="section-label--activity">
-            <History size={12} /> Recent Activity
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {history.slice(0, 5).map((h) => (
-              <div key={h.id} className="pill-history-row">
-                {h.type === 'deploy' && <Cpu size={12} color={h.ok ? '#10B981' : '#EF4444'} />}
-                {h.type === 'pr' && <GitPullRequest size={12} color={h.ok ? '#10B981' : '#EF4444'} />}
-                {h.type === 'stage' && <Package size={12} color={h.ok ? '#F59E0B' : '#EF4444'} />}
-                {h.type === 'pages' && <Cloud size={12} color={h.ok ? '#10B981' : '#EF4444'} />}
-                <span style={{ flex: 1 }}>{h.summary}</span>
-                <span style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem' }}>{relTime(h.ts)}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      <CfHistoryList history={history} relTime={relTime} />
 
-      {/* Activity log + errors */}
-      {(log.length > 0 || error) && (
-        <div className="code-log--black">
-          {log.map((l) => (
-            <div key={`log-${l.slice(0, 20)}`} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Terminal size={10} color="var(--text-tertiary)" /> {l}
-            </div>
-          ))}
-          {error && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#EF4444', marginTop: 4 }}>
-              <AlertCircle size={10} /> {error}
-            </div>
-          )}
-        </div>
-      )}
+      <CfActivityLog log={log} error={error} />
 
       <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', lineHeight: 1.4 }}>
         Pull fetches the remote worker bundle, sync-meta. Push bundles <code>worker/</code> via <code>wrangler --outfile</code>,

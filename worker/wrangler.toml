@@ -13,11 +13,9 @@ binding = "MEMORIES"
 id = "4239437890d8481abd708bd4bdf80890"
 
 # Bind to KV for cloud-sync artifacts (worker bundles, manifests, deploy history).
-# Create with: npx wrangler kv:namespace create ARTIFACTS
-# Then replace the placeholder id below.
 [[kv_namespaces]]
 binding = "ARTIFACTS"
-id = "00000000000000000000000000000000"
+id = "2b745f0f041b40279d8f013afee9ef5c"
 
 # Bind to Durable Objects for Thread state
 [[durable_objects.bindings]]

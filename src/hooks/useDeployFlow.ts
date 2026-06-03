@@ -81,16 +81,23 @@ export const useDeployFlow = () => {
   const loadDomains = useEffectEvent(async () => {
     setLoadingDomains(true);
     try {
-      const res = await fetch('/api/cloudflare-zones');
+      const custom = localStorage.getItem('openthink_api_url');
+      const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      const apiBase = custom
+        ? (custom.endsWith('/') ? custom.slice(0, -1) : custom)
+        : (isLocal ? 'http://127.0.0.1:8787' : `${window.location.origin}`);
+      const { cfAuthHeaders } = await import('../lib/cfCreds');
+      const res = await fetch(`${apiBase}/api/cf/zones`, { headers: cfAuthHeaders() });
       const data = await res.json();
-      if (data.domains && Array.isArray(data.domains) && data.domains.length > 0) {
-        setDomains(data.domains);
+      if (data.zones && Array.isArray(data.zones) && data.zones.length > 0) {
+        const domainNames = data.zones.map((z: { name: string }) => z.name);
+        setDomains(domainNames);
         setDomainsSource('live');
         const savedDomain = localStorage.getItem(STORAGE_KEYS.baseDomain);
-        if (savedDomain && data.domains.includes(savedDomain)) {
+        if (savedDomain && domainNames.includes(savedDomain)) {
           setSelectedBaseDomainRaw(savedDomain);
         } else {
-          setSelectedBaseDomainRaw(data.domains[0]);
+          setSelectedBaseDomainRaw(domainNames[0]);
         }
         setLoadingDomains(false);
         return;

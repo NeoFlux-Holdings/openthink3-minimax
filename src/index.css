@@ -1989,3 +1989,13 @@ input, textarea, select {
   gap: 8px;
   margin-top: 12px;
 }
+
+.cf-sync-panel {
+  padding: 20px;
+  border-radius: 12px;
+  background: rgba(36,36,36,0.3);
+  border: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}

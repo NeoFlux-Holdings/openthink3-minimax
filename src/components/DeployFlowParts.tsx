@@ -1,5 +1,6 @@
-import React from 'react';
-import { Check, CreditCard, Key, ArrowRight, Loader2, Play } from 'lucide-react';
+import React, { useState } from 'react';
+import { Check, CreditCard, Key, ArrowRight, Loader2, Play, RefreshCw, LogOut } from 'lucide-react';
+import { getCfCreds, setCfCreds, clearCfCreds, resolveAccount, type CfCreds } from '../lib/cfCreds';
 
 export const ProgressStepper: React.FC<{
   step: number;
@@ -197,6 +198,122 @@ export const Step1NameAgent: React.FC<{
     </button>
   </div>
 );
+
+export const Step0CloudflareConnect: React.FC<{
+  onConnected: (creds: CfCreds) => void;
+}> = ({ onConnected }) => {
+  const [creds, setCredsState] = useState<CfCreds | null>(() => getCfCreds());
+  const [token, setToken] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleConnect = async () => {
+    if (!token.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const resolved = await resolveAccount(token.trim());
+      setCfCreds(resolved);
+      setCredsState(resolved);
+      setToken('');
+      onConnected(resolved);
+    } catch (e: any) {
+      setError(e.message || String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDisconnect = () => {
+    clearCfCreds();
+    setCredsState(null);
+  };
+
+  if (creds) {
+    return (
+      <div className="fade-in">
+        <div className="row-flex-gap-12">
+          <Key color="#10B981" />
+          <h2 style={{ fontSize: '1.5rem', margin: 0 }}>Connect Cloudflare</h2>
+        </div>
+        <p style={{ color: 'var(--text-secondary)', marginBottom: '24px' }}>
+          Your Cloudflare account is connected. OpenThink will deploy directly to this account.
+        </p>
+
+        <div style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.2)', padding: '20px', borderRadius: 'var(--radius-md)', marginBottom: '24px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+            <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10B981', boxShadow: '0 0 8px #10B981' }} />
+            <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#10B981' }}>
+              Connected to {creds.accountName || creds.accountId}
+            </span>
+          </div>
+          {creds.email && (
+            <p style={{ fontSize: '0.875rem', margin: 0, color: 'var(--text-secondary)' }}>
+              Logged in as: <strong style={{ color: 'var(--text-primary)' }}>{creds.email}</strong>
+            </p>
+          )}
+          <p style={{ fontSize: '0.75rem', marginTop: '6px', color: 'var(--text-tertiary)' }}>
+            Full write permissions found for Workers scripts, D1 databases, Pages assets, and KV stores.
+          </p>
+        </div>
+
+        <div style={{ display: 'flex', gap: '12px' }}>
+          <button type="button" className="btn btn-ghost" onClick={handleDisconnect}>
+            <LogOut size={14} /> Disconnect
+          </button>
+          <button type="button" className="btn btn-primary" style={{ flex: 1 }} onClick={() => onConnected(creds)}>
+            Continue <ArrowRight size={18} />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fade-in">
+      <div className="row-flex-gap-12">
+        <Key color="var(--accent-secondary)" />
+        <h2 style={{ fontSize: '1.5rem', margin: 0 }}>Connect Cloudflare</h2>
+      </div>
+      <p style={{ color: 'var(--text-secondary)', marginBottom: '24px' }}>
+        OpenThink deploys directly to your Cloudflare account. Paste a Cloudflare API token with
+        Workers + Pages + Zones read scope. Your token is stored only in this browser.
+      </p>
+
+      <div className="glass-card" style={{ marginBottom: '20px' }}>
+        <label htmlFor="cf-token-input" style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: '8px' }}>
+          Cloudflare API Token
+        </label>
+        <input
+          id="cf-token-input"
+          type="password"
+          className="input-field"
+          value={token}
+          onChange={e => setToken(e.target.value)}
+          placeholder="cf-api-token-…"
+          style={{ fontSize: '0.9rem', padding: '12px 14px' }}
+          disabled={busy}
+          aria-label="Cloudflare API token"
+        />
+        {error && (
+          <div style={{ fontSize: '0.75rem', color: '#EF4444', marginTop: '8px' }}>{error}</div>
+        )}
+        <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noreferrer" style={{ display: 'block', marginTop: '8px', fontSize: '0.75rem', color: 'var(--accent-secondary)', textDecoration: 'underline' }}>
+          Create a token at dash.cloudflare.com →
+        </a>
+      </div>
+
+      <button type="button"
+        className="btn btn-primary"
+        style={{ width: '100%', padding: '16px', fontSize: '1.125rem' }}
+        onClick={handleConnect}
+        disabled={busy || !token.trim()}
+      >
+        {busy ? <><RefreshCw size={14} className="spin" /> Connecting…</> : <>Connect <ArrowRight size={18} /></>}
+      </button>
+    </div>
+  );
+};
 
 export const Step2CloudflareAccess: React.FC<{
   onBack: () => void;
