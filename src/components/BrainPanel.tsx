@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useReducer, type Dispatch, type SetStateAction } from 'react';
 import {
   BrainStatusCard, SkillsToggleCard, MemorySearchCard,
   IngestCard, DreamCycleCard, GstackReferenceCard,
@@ -17,37 +17,136 @@ const SKILL_KEYS = {
   gstack: 'skill_gstack_discipline',
 };
 
-const BrainPanel: React.FC = () => {
-  const [status, setStatus] = useState<BrainStatus>({
+type BrainPanelState = {
+  status: BrainStatus;
+  checking: boolean;
+  gbrainEnabled: boolean;
+  gstackEnabled: boolean;
+  searchQuery: string;
+  searching: boolean;
+  searchResult: SearchResult | null;
+  searchError: string | null;
+  ingestText: string;
+  ingestTitle: string;
+  ingesting: boolean;
+  ingestMsg: string | null;
+  showIngest: boolean;
+  dreamRunning: boolean;
+  dreamLog: string[];
+  showConfig: boolean;
+  vmUrl: string;
+  savingConfig: boolean;
+};
+
+type BrainPanelSetAction<K extends keyof BrainPanelState> = {
+  type: 'set';
+  key: K;
+  value: BrainPanelState[K] | ((prev: BrainPanelState[K]) => BrainPanelState[K]);
+};
+
+type BrainPanelAction = {
+  [K in keyof BrainPanelState]: BrainPanelSetAction<K>;
+}[keyof BrainPanelState];
+
+const initBrainPanelState = (): BrainPanelState => ({
+  status: {
     connected: false, pageCount: 0, entityCount: 0,
-    lastDream: null, nextDream: null, engine: 'unknown', version: ''
-  });
-  const [checking, setChecking] = useState(false);
+    lastDream: null, nextDream: null, engine: 'unknown', version: '',
+  },
+  checking: false,
+  gbrainEnabled: localStorage.getItem(SKILL_KEYS.gbrain) !== 'false',
+  gstackEnabled: localStorage.getItem(SKILL_KEYS.gstack) !== 'false',
+  searchQuery: '',
+  searching: false,
+  searchResult: null,
+  searchError: null,
+  ingestText: '',
+  ingestTitle: '',
+  ingesting: false,
+  ingestMsg: null,
+  showIngest: false,
+  dreamRunning: false,
+  dreamLog: [],
+  showConfig: false,
+  vmUrl: localStorage.getItem('openthink_gbrain_vm') || '',
+  savingConfig: false,
+});
 
-  const [gbrainEnabled, setGbrainEnabled] = useState(() =>
-    localStorage.getItem(SKILL_KEYS.gbrain) !== 'false'
-  );
-  const [gstackEnabled, setGstackEnabled] = useState(() =>
-    localStorage.getItem(SKILL_KEYS.gstack) !== 'false'
-  );
+const resolveValue = <T,>(value: T | ((prev: T) => T), prev: T): T =>
+  typeof value === 'function' ? (value as (prev: T) => T)(prev) : value;
 
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searching, setSearching] = useState(false);
-  const [searchResult, setSearchResult] = useState<SearchResult | null>(null);
-  const [, setSearchError] = useState<string | null>(null);
+const brainPanelReducer = (state: BrainPanelState, action: BrainPanelAction): BrainPanelState => {
+  switch (action.key) {
+    case 'status':
+      return { ...state, status: resolveValue(action.value, state.status) };
+    case 'checking':
+      return { ...state, checking: resolveValue(action.value, state.checking) };
+    case 'gbrainEnabled':
+      return { ...state, gbrainEnabled: resolveValue(action.value, state.gbrainEnabled) };
+    case 'gstackEnabled':
+      return { ...state, gstackEnabled: resolveValue(action.value, state.gstackEnabled) };
+    case 'searchQuery':
+      return { ...state, searchQuery: resolveValue(action.value, state.searchQuery) };
+    case 'searching':
+      return { ...state, searching: resolveValue(action.value, state.searching) };
+    case 'searchResult':
+      return { ...state, searchResult: resolveValue(action.value, state.searchResult) };
+    case 'searchError':
+      return { ...state, searchError: resolveValue(action.value, state.searchError) };
+    case 'ingestText':
+      return { ...state, ingestText: resolveValue(action.value, state.ingestText) };
+    case 'ingestTitle':
+      return { ...state, ingestTitle: resolveValue(action.value, state.ingestTitle) };
+    case 'ingesting':
+      return { ...state, ingesting: resolveValue(action.value, state.ingesting) };
+    case 'ingestMsg':
+      return { ...state, ingestMsg: resolveValue(action.value, state.ingestMsg) };
+    case 'showIngest':
+      return { ...state, showIngest: resolveValue(action.value, state.showIngest) };
+    case 'dreamRunning':
+      return { ...state, dreamRunning: resolveValue(action.value, state.dreamRunning) };
+    case 'dreamLog':
+      return { ...state, dreamLog: resolveValue(action.value, state.dreamLog) };
+    case 'showConfig':
+      return { ...state, showConfig: resolveValue(action.value, state.showConfig) };
+    case 'vmUrl':
+      return { ...state, vmUrl: resolveValue(action.value, state.vmUrl) };
+    case 'savingConfig':
+      return { ...state, savingConfig: resolveValue(action.value, state.savingConfig) };
+  }
+};
 
-  const [ingestText, setIngestText] = useState('');
-  const [ingestTitle, setIngestTitle] = useState('');
-  const [ingesting, setIngesting] = useState(false);
-  const [ingestMsg, setIngestMsg] = useState<string | null>(null);
-  const [showIngest, setShowIngest] = useState(false);
+const BrainPanel: React.FC = () => {
+  const [state, dispatch] = useReducer(brainPanelReducer, undefined, initBrainPanelState);
+  const {
+    status, checking, gbrainEnabled, gstackEnabled,
+    searchQuery, searching, searchResult,
+    ingestText, ingestTitle, ingesting, ingestMsg, showIngest,
+    dreamRunning, dreamLog,
+    showConfig, vmUrl, savingConfig,
+  } = state;
 
-  const [dreamRunning, setDreamRunning] = useState(false);
-  const [dreamLog, setDreamLog] = useState<string[]>([]);
+  const makeSetter = <K extends keyof BrainPanelState,>(key: K): Dispatch<SetStateAction<BrainPanelState[K]>> =>
+    (v) => dispatch({ type: 'set', key, value: v } as BrainPanelAction);
 
-  const [showConfig, setShowConfig] = useState(false);
-  const [vmUrl, setVmUrl] = useState(() => localStorage.getItem('openthink_gbrain_vm') || '');
-  const [savingConfig, setSavingConfig] = useState(false);
+  const setStatus = makeSetter('status');
+  const setChecking = makeSetter('checking');
+  const setGbrainEnabled = makeSetter('gbrainEnabled');
+  const setGstackEnabled = makeSetter('gstackEnabled');
+  const setSearchQuery = makeSetter('searchQuery');
+  const setSearching = makeSetter('searching');
+  const setSearchResult = makeSetter('searchResult');
+  const setSearchError = makeSetter('searchError');
+  const setIngestText = makeSetter('ingestText');
+  const setIngestTitle = makeSetter('ingestTitle');
+  const setIngesting = makeSetter('ingesting');
+  const setIngestMsg = makeSetter('ingestMsg');
+  const setShowIngest = makeSetter('showIngest');
+  const setDreamRunning = makeSetter('dreamRunning');
+  const setDreamLog = makeSetter('dreamLog');
+  const setShowConfig = makeSetter('showConfig');
+  const setVmUrl = makeSetter('vmUrl');
+  const setSavingConfig = makeSetter('savingConfig');
 
   const toggleSkill = (key: 'gbrain' | 'gstack') => {
     if (key === 'gbrain') {
@@ -138,7 +237,7 @@ const BrainPanel: React.FC = () => {
     setIngesting(false);
   };
 
-  const runDreamCycle = async () => {
+  const runDreamCycle = () => {
     setDreamRunning(true);
     setDreamLog(['🌙 Dream cycle initiated...', '🔍 Scanning for stale knowledge entries...']);
     const steps = [
@@ -150,12 +249,29 @@ const BrainPanel: React.FC = () => {
       '💾 Committing updated knowledge graph edges...',
       '✅ Dream cycle complete. Brain is sharp.'
     ];
-    for (const step of steps) {
-      await new Promise(r => setTimeout(r, 800));
-      setDreamLog(p => [...p, step]);
-    }
-    setDreamRunning(false);
-    setStatus(s => ({ ...s, lastDream: new Date().toLocaleString() }));
+    const stepDelays = steps.map(() => 800);
+    const totalDelay = stepDelays.reduce((a, b) => a + b, 0);
+    const startTime = Date.now();
+    const seen = new Set<string>();
+    const tick = () => {
+      const elapsed = Date.now() - startTime;
+      let cumDelay = 0;
+      for (let i = 0; i < steps.length; i++) {
+        cumDelay += stepDelays[i];
+        if (elapsed < cumDelay) break;
+        const step = steps[i];
+        if (seen.has(step)) continue;
+        seen.add(step);
+        setDreamLog(p => [...p, step]);
+      }
+      if (elapsed < totalDelay) {
+        setTimeout(tick, 100);
+      } else {
+        setDreamRunning(false);
+        setStatus(s => ({ ...s, lastDream: new Date().toLocaleString() }));
+      }
+    };
+    setTimeout(tick, 100);
   };
 
   const saveConfig = async () => {

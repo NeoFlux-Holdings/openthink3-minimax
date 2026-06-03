@@ -8,7 +8,7 @@ import CanvasPanel from './CanvasPanel';
 import AccountHub from './AccountHub';
 import DesktopRemotePanel from './DesktopRemotePanel';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useReducer } from 'react';
 
 const DEFAULT_MODEL = '@cf/meta/llama-3.1-8b-instruct';
 const ACTIVE_MODEL_KEY = 'openthink_active_model';
@@ -405,12 +405,50 @@ const SkillCard = ({ name, desc, status = 'live' }: { name: string, desc: string
 /* ==========================================================================
    Settings Subpanel - HUD switches & Credentials
    ========================================================================== */
+type SettingsState = {
+  hudActive: boolean;
+  premiumActive: boolean;
+  theme: string;
+  token: string;
+  saved: boolean;
+};
+
+type SettingsAction =
+  | { type: 'SET_HUD_ACTIVE'; value: boolean }
+  | { type: 'SET_PREMIUM_ACTIVE'; value: boolean }
+  | { type: 'SET_THEME'; value: string }
+  | { type: 'SET_TOKEN'; value: string }
+  | { type: 'SET_SAVED'; value: boolean };
+
+function settingsReducer(state: SettingsState, action: SettingsAction): SettingsState {
+  switch (action.type) {
+    case 'SET_HUD_ACTIVE':
+      return { ...state, hudActive: action.value };
+    case 'SET_PREMIUM_ACTIVE':
+      return { ...state, premiumActive: action.value };
+    case 'SET_THEME':
+      return { ...state, theme: action.value };
+    case 'SET_TOKEN':
+      return { ...state, token: action.value };
+    case 'SET_SAVED':
+      return { ...state, saved: action.value };
+  }
+}
+
 const SettingsPanel = () => {
-  const [hudActive, setHudActive] = useState(true);
-  const [premiumActive, setPremiumActive] = useState(true);
-  const [theme, setTheme] = useState(() => localStorage.getItem(THEME_KEY) || 'dark');
-  const [token, setToken] = useState('cf_ai_••••••••••••••••••••••••');
-  const [saved, setSaved] = useState(false);
+  const [state, dispatch] = useReducer(settingsReducer, undefined, () => ({
+    hudActive: true,
+    premiumActive: true,
+    theme: localStorage.getItem(THEME_KEY) || 'dark',
+    token: 'cf_ai_••••••••••••••••••••••••',
+    saved: false,
+  }));
+  const { hudActive, premiumActive, theme, token, saved } = state;
+  const setHudActive     = (value: boolean) => dispatch({ type: 'SET_HUD_ACTIVE', value });
+  const setPremiumActive = (value: boolean) => dispatch({ type: 'SET_PREMIUM_ACTIVE', value });
+  const setTheme         = (value: string) => dispatch({ type: 'SET_THEME', value });
+  const setToken         = (value: string) => dispatch({ type: 'SET_TOKEN', value });
+  const setSaved         = (value: boolean) => dispatch({ type: 'SET_SAVED', value });
 
   const handleSave = () => {
     localStorage.setItem(THEME_KEY, theme);

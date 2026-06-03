@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useSyncExternalStore } from 'react';
+import React, { useReducer, useEffect, useSyncExternalStore } from 'react';
 import { Cpu, AlertCircle, RefreshCw } from 'lucide-react';
 import {
   TunnelControl, ServiceList, McpBridge, LocalAgentRunner, ConsoleLog,
@@ -11,22 +11,75 @@ import {
 
 const CUSTOM_DOMAIN_KEY = 'openthink_custom_domain';
 
+type State = {
+  tunnelActive: boolean;
+  baseDomain: string;
+  services: LocalService[];
+  ollamaModels: string[];
+  scanningModels: boolean;
+  consoleLogs: string[];
+};
+
+type Action =
+  | { type: 'SET_TUNNEL_ACTIVE'; value: boolean }
+  | { type: 'SET_OLLAMA_MODELS'; value: string[] }
+  | { type: 'SET_SCANNING_MODELS'; value: boolean }
+  | { type: 'SET_SERVICES'; value: LocalService[] | ((prev: LocalService[]) => LocalService[]) }
+  | { type: 'SET_CONSOLE_LOGS'; value: string[] | ((prev: string[]) => string[]) };
+
+function reducer(state: State, action: Action): State {
+  switch (action.type) {
+    case 'SET_TUNNEL_ACTIVE':
+      return { ...state, tunnelActive: action.value };
+    case 'SET_OLLAMA_MODELS':
+      return { ...state, ollamaModels: action.value };
+    case 'SET_SCANNING_MODELS':
+      return { ...state, scanningModels: action.value };
+    case 'SET_SERVICES':
+      return {
+        ...state,
+        services: typeof action.value === 'function'
+          ? action.value(state.services)
+          : action.value,
+      };
+    case 'SET_CONSOLE_LOGS':
+      return {
+        ...state,
+        consoleLogs: typeof action.value === 'function'
+          ? action.value(state.consoleLogs)
+          : action.value,
+      };
+  }
+}
+
+const INITIAL_SERVICES: LocalService[] = [
+  { id: 'ollama', name: 'Ollama Local LLMs',   subdomain: 'ollama-ai',   localPort: 11434, active: true,  type: 'Ollama'     },
+  { id: 'codex',  name: 'Codex AI Engine',      subdomain: 'codex-local', localPort: 8000,  active: true,  type: 'Codex'      },
+  { id: 'claude', name: 'Claude Desktop MCP',   subdomain: 'claude-mcp',  localPort: 3000,  active: false, type: 'Claude MCP' },
+];
+
+const INITIAL_LOGS: string[] = [
+  '⚙️ Desktop Remote Control initialized.',
+  '🔌 cloudflared v2026.5.0 module loaded.',
+];
+
 const DesktopRemotePanel: React.FC = () => {
-  const [tunnelActive, setTunnelActive] = useState(false);
   const tunnelId = 'ot-tunnel-84b2c9';
-  const [baseDomain] = useState(() => localStorage.getItem(CUSTOM_DOMAIN_KEY) || 'jiggytom.com');
-  const [services, setServices] = useState<LocalService[]>([
-    { id: 'ollama', name: 'Ollama Local LLMs',   subdomain: 'ollama-ai',   localPort: 11434, active: true,  type: 'Ollama'     },
-    { id: 'codex',  name: 'Codex AI Engine',      subdomain: 'codex-local', localPort: 8000,  active: true,  type: 'Codex'      },
-    { id: 'claude', name: 'Claude Desktop MCP',   subdomain: 'claude-mcp',  localPort: 3000,  active: false, type: 'Claude MCP' },
-  ]);
-  const [ollamaModels, setOllamaModels]     = useState<string[]>([]);
-  const [scanningModels, setScanningModels] = useState(false);
+  const [state, dispatch] = useReducer(reducer, undefined, () => ({
+    tunnelActive: false,
+    baseDomain: localStorage.getItem(CUSTOM_DOMAIN_KEY) || 'jiggytom.com',
+    services: INITIAL_SERVICES,
+    ollamaModels: [] as string[],
+    scanningModels: false,
+    consoleLogs: INITIAL_LOGS,
+  }));
+  const { tunnelActive, baseDomain, services, ollamaModels, scanningModels, consoleLogs } = state;
+  const setTunnelActive    = (value: boolean) => dispatch({ type: 'SET_TUNNEL_ACTIVE', value });
+  const setOllamaModels    = (value: string[]) => dispatch({ type: 'SET_OLLAMA_MODELS', value });
+  const setScanningModels  = (value: boolean) => dispatch({ type: 'SET_SCANNING_MODELS', value });
+  const setServices        = (value: LocalService[] | ((prev: LocalService[]) => LocalService[])) => dispatch({ type: 'SET_SERVICES', value });
+  const setConsoleLogs     = (value: string[] | ((prev: string[]) => string[])) => dispatch({ type: 'SET_CONSOLE_LOGS', value });
   const agentStatusValue = useSyncExternalStore(subscribeAgent, getAgentStatus, getAgentServerStatus);
-  const [consoleLogs, setConsoleLogs]       = useState<string[]>([
-    '⚙️ Desktop Remote Control initialized.',
-    '🔌 cloudflared v2026.5.0 module loaded.',
-  ]);
 
   const addLog = (msg: string) => {
     const t = new Date().toLocaleTimeString();

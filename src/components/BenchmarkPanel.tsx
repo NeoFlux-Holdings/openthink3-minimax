@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useReducer, useEffect, useRef } from 'react';
 import {
   BarChart2, Play, RefreshCw, TrendingUp, Award,
   ChevronDown, ChevronUp, ExternalLink, Zap
@@ -89,14 +89,67 @@ const panel: React.CSSProperties = {
   padding: '16px',
 };
 
+type State = {
+  latest: BenchmarkRun | null;
+  loading: boolean;
+  runningEval: boolean;
+  evalLogs: string[];
+  showComparison: boolean;
+  showHistory: boolean;
+  evalProgress: number;
+};
+
+type Action =
+  | { type: 'SET_LATEST'; value: BenchmarkRun | null }
+  | { type: 'SET_LOADING'; value: boolean }
+  | { type: 'SET_RUNNING_EVAL'; value: boolean }
+  | { type: 'SET_EVAL_LOGS'; value: string[] | ((prev: string[]) => string[]) }
+  | { type: 'SET_SHOW_COMPARISON'; value: boolean }
+  | { type: 'SET_SHOW_HISTORY'; value: boolean }
+  | { type: 'SET_EVAL_PROGRESS'; value: number };
+
+function reducer(state: State, action: Action): State {
+  switch (action.type) {
+    case 'SET_LATEST':
+      return { ...state, latest: action.value };
+    case 'SET_LOADING':
+      return { ...state, loading: action.value };
+    case 'SET_RUNNING_EVAL':
+      return { ...state, runningEval: action.value };
+    case 'SET_EVAL_LOGS':
+      return {
+        ...state,
+        evalLogs: typeof action.value === 'function'
+          ? action.value(state.evalLogs)
+          : action.value,
+      };
+    case 'SET_SHOW_COMPARISON':
+      return { ...state, showComparison: action.value };
+    case 'SET_SHOW_HISTORY':
+      return { ...state, showHistory: action.value };
+    case 'SET_EVAL_PROGRESS':
+      return { ...state, evalProgress: action.value };
+  }
+}
+
 const BenchmarkPanel: React.FC = () => {
-  const [latest, setLatest] = useState<BenchmarkRun | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [runningEval, setRunningEval] = useState(false);
-  const [evalLogs, setEvalLogs] = useState<string[]>([]);
-  const [showComparison, setShowComparison] = useState(true);
-  const [showHistory, setShowHistory] = useState(true);
-  const [evalProgress, setEvalProgress] = useState(0);
+  const [state, dispatch] = useReducer(reducer, undefined, () => ({
+    latest: null,
+    loading: true,
+    runningEval: false,
+    evalLogs: [] as string[],
+    showComparison: true,
+    showHistory: true,
+    evalProgress: 0,
+  }));
+  const { latest, loading, runningEval, evalLogs, showComparison, showHistory, evalProgress } = state;
+  const setLatest         = (value: BenchmarkRun | null) => dispatch({ type: 'SET_LATEST', value });
+  const setLoading        = (value: boolean) => dispatch({ type: 'SET_LOADING', value });
+  const setRunningEval    = (value: boolean) => dispatch({ type: 'SET_RUNNING_EVAL', value });
+  const setEvalLogs       = (value: string[] | ((prev: string[]) => string[])) => dispatch({ type: 'SET_EVAL_LOGS', value });
+  const setShowComparison = (value: boolean) => dispatch({ type: 'SET_SHOW_COMPARISON', value });
+  const setShowHistory    = (value: boolean) => dispatch({ type: 'SET_SHOW_HISTORY', value });
+  const setEvalProgress   = (value: number) => dispatch({ type: 'SET_EVAL_PROGRESS', value });
   const logRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { logRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [evalLogs]);
@@ -125,7 +178,7 @@ const BenchmarkPanel: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  const runEval = async () => {
+  const runEval = () => {
     setRunningEval(true);
     setEvalLogs(['🚀 Connecting to eval runner on exe.dev VM...']);
     setEvalProgress(0);
@@ -146,11 +199,32 @@ const BenchmarkPanel: React.FC = () => {
       [100, '✅ Eval complete! Results updated.'],
     ];
 
-    for (const [pct, msg] of steps) {
-      await new Promise(r => setTimeout(r, 900 + Math.random() * 600));
-      setEvalLogs(p => [...p, msg]);
-      setEvalProgress(pct);
-    }
+    const stepDelays: number[] = steps.map(() => 900 + Math.random() * 600);
+    const totalDelay = stepDelays.reduce((a, b) => a + b, 0);
+    const startTime = Date.now();
+    const seen = new Set<string>();
+    const tick = () => {
+      const elapsed = Date.now() - startTime;
+      let cumDelay = 0;
+      for (let i = 0; i < steps.length; i++) {
+        cumDelay += stepDelays[i];
+        if (elapsed < cumDelay) break;
+        const [pct, msg] = steps[i];
+        if (seen.has(msg)) continue;
+        seen.add(msg);
+        setEvalLogs(p => [...p, msg]);
+        setEvalProgress(pct);
+      }
+      if (elapsed < totalDelay) {
+        setTimeout(tick, 100);
+      } else {
+        finishEval();
+      }
+    };
+    setTimeout(tick, 100);
+  };
+
+  const finishEval = () => {
 
     const newRun: BenchmarkRun = {
       id: `run-${Date.now()}`,

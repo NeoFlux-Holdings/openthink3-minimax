@@ -154,89 +154,115 @@ If you need context or memory, call the check_context tool.`;
             let depth = 0;
             const maxDepth = 5;
 
-            while (loop && depth < maxDepth) {
-              depth++;
-              // Check if model wants to call tools (non-streaming first)
-              const aiResponse = await this.env.AI.run(selectedModel, {
+            const runToolCallIteration = async (): Promise<any> => {
+              return await this.env.AI.run(selectedModel, {
                 messages: llmMessages,
                 tools: tools.length > 0 ? tools : undefined
               }) as any;
+            };
 
-              if (aiResponse.tool_calls && aiResponse.tool_calls.length > 0) {
-                const mcpToolByName = new Map(mcpTools.map(t => [t.name, t]));
-                await Promise.all(aiResponse.tool_calls.map(async (tc) => {
-                  // Inform frontend we are calling a tool
-                  await writer.write(encoder.encode(`data: ${JSON.stringify({ status: `Calling tool ${tc.name}...` })}\n\n`));
+            const runToolExecution = async (aiResponse: any) => {
+              const mcpToolByName = new Map(mcpTools.map(t => [t.name, t]));
+              await Promise.all(aiResponse.tool_calls.map(async (tc: any) => {
+                await writer.write(encoder.encode(`data: ${JSON.stringify({ status: `Calling tool ${tc.name}...` })}\n\n`));
 
-                  const mcpTool = mcpToolByName.get(tc.name);
-                  if (mcpTool) {
-                    const toolResult = await this.mcp.callTool({
-                      serverId: mcpTool.serverId,
-                      name: tc.name,
-                      arguments: tc.arguments
-                    });
+                const mcpTool = mcpToolByName.get(tc.name);
+                if (mcpTool) {
+                  const toolResult = await this.mcp.callTool({
+                    serverId: mcpTool.serverId,
+                    name: tc.name,
+                    arguments: tc.arguments
+                  });
 
-                    llmMessages.push({
-                      role: "assistant",
-                      content: "",
-                      tool_calls: [tc]
-                    });
-                    llmMessages.push({
-                      role: "tool",
-                      name: tc.name,
-                      content: JSON.stringify(toolResult)
-                    });
-                  }
-                }));
-              } else {
-                // No more tool calls, stream the final response text
-                loop = false;
-                
-                await writer.write(encoder.encode(`data: ${JSON.stringify({ status: "Thinking..." })}\n\n`));
+                  llmMessages.push({
+                    role: "assistant",
+                    content: "",
+                    tool_calls: [tc]
+                  });
+                  llmMessages.push({
+                    role: "tool",
+                    name: tc.name,
+                    content: JSON.stringify(toolResult)
+                  });
+                }
+              }));
+            };
 
-                const aiStream = await this.env.AI.run(selectedModel, {
-                  messages: llmMessages,
-                  stream: true
-                }) as ReadableStream;
+            const streamFinalResponse = async () => {
+              await writer.write(encoder.encode(`data: ${JSON.stringify({ status: "Thinking..." })}\n\n`));
 
-                const reader = aiStream.getReader();
-                const decoder = new TextDecoder();
-                let fullText = "";
-                let buffer = "";
+              const aiStream = await this.env.AI.run(selectedModel, {
+                messages: llmMessages,
+                stream: true
+              }) as ReadableStream;
 
-                while (true) {
-                  const { done, value } = await reader.read();
-                  if (done) break;
+              const reader = aiStream.getReader();
+              const decoder = new TextDecoder();
+              let fullText = "";
+              let buffer = "";
 
-                  const chunk = decoder.decode(value, { stream: true });
-                  buffer += chunk;
+              const processStreamChunk = async (value: Uint8Array | undefined) => {
+                if (!value) return;
+                const chunk = decoder.decode(value, { stream: true });
+                buffer += chunk;
 
-                  const parts = buffer.split("\n");
-                  buffer = parts.pop() ?? "";
-                  for (const rawLine of parts) {
-                    const line = rawLine.trim();
-                    if (!line.startsWith("data: ")) continue;
-                    if (line === "data: [DONE]") continue;
-                    try {
-                      const parsed = JSON.parse(line.slice(6));
-                      if (parsed.response) {
-                        fullText += parsed.response;
-                        await writer.write(encoder.encode(`data: ${JSON.stringify({ response: parsed.response })}\n\n`));
-                      }
-                    } catch (e) {
-                      // Ignore parse errors on incomplete JSON lines
+                const parts = buffer.split("\n");
+                buffer = parts.pop() ?? "";
+                const writes: Promise<void>[] = [];
+                for (const rawLine of parts) {
+                  const line = rawLine.trim();
+                  if (!line.startsWith("data: ")) continue;
+                  if (line === "data: [DONE]") continue;
+                  try {
+                    const parsed = JSON.parse(line.slice(6));
+                    if (parsed.response) {
+                      fullText += parsed.response;
+                      writes.push(writer.write(encoder.encode(`data: ${JSON.stringify({ response: parsed.response })}\n\n`)));
                     }
+                  } catch (e) {
+                    // Ignore parse errors on incomplete JSON lines
                   }
                 }
+                await Promise.all(writes);
+              };
 
-                // Save assistant response to SQLite
-                const assistantMsgId = crypto.randomUUID();
-                this.sql`
-                  INSERT INTO messages (id, role, content, timestamp)
-                  VALUES (${assistantMsgId}, 'assistant', ${fullText}, ${Date.now()})
-                `;
+              const readStreamOnce = async (): Promise<boolean> => {
+                const result = await reader.read();
+                if (result.done) return false;
+                await processStreamChunk(result.value);
+                return true;
+              };
+
+              const drainStream = async () => {
+                const hasMore = await readStreamOnce();
+                if (hasMore) {
+                  await drainStream();
+                }
+              };
+
+              await drainStream();
+
+              const assistantMsgId = crypto.randomUUID();
+              this.sql`
+                INSERT INTO messages (id, role, content, timestamp)
+                VALUES (${assistantMsgId}, 'assistant', ${fullText}, ${Date.now()})
+              `;
+            };
+
+            const agentLoop = async () => {
+              if (!loop || depth >= maxDepth) return;
+              depth++;
+              const aiResponse = await runToolCallIteration();
+
+              if (aiResponse.tool_calls && aiResponse.tool_calls.length > 0) {
+                await runToolExecution(aiResponse);
+                await agentLoop();
+              } else {
+                loop = false;
+                await streamFinalResponse();
               }
-            }
+            };
+            await agentLoop();
 
             await writer.write(encoder.encode("data: [DONE]\n\n"));
           } catch (err: any) {

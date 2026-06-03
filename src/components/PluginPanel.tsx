@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useReducer } from 'react';
 import {
   Puzzle, Brain, Zap, Server, Wrench, ToggleLeft, ToggleRight,
   ChevronDown, ChevronUp, ExternalLink,
@@ -102,21 +102,76 @@ const BUILTIN_PLUGINS: Omit<Plugin, 'enabled'>[] = [
   },
 ];
 
+type State = {
+  plugins: Plugin[];
+  expandedId: string | null;
+  configuringId: string | null;
+  configValues: Record<string, string>;
+  communityUrl: string;
+  adding: boolean;
+  showAddCommunity: boolean;
+};
+
+type Action =
+  | { type: 'SET_PLUGINS'; value: Plugin[] | ((prev: Plugin[]) => Plugin[]) }
+  | { type: 'SET_EXPANDED_ID'; value: string | null }
+  | { type: 'SET_CONFIGURING_ID'; value: string | null }
+  | { type: 'SET_CONFIG_VALUES'; value: Record<string, string> | ((prev: Record<string, string>) => Record<string, string>) }
+  | { type: 'SET_COMMUNITY_URL'; value: string }
+  | { type: 'SET_ADDING'; value: boolean }
+  | { type: 'SET_SHOW_ADD_COMMUNITY'; value: boolean };
+
+function reducer(state: State, action: Action): State {
+  switch (action.type) {
+    case 'SET_PLUGINS':
+      return {
+        ...state,
+        plugins: typeof action.value === 'function'
+          ? action.value(state.plugins)
+          : action.value,
+      };
+    case 'SET_EXPANDED_ID':
+      return { ...state, expandedId: action.value };
+    case 'SET_CONFIGURING_ID':
+      return { ...state, configuringId: action.value };
+    case 'SET_CONFIG_VALUES':
+      return {
+        ...state,
+        configValues: typeof action.value === 'function'
+          ? action.value(state.configValues)
+          : action.value,
+      };
+    case 'SET_COMMUNITY_URL':
+      return { ...state, communityUrl: action.value };
+    case 'SET_ADDING':
+      return { ...state, adding: action.value };
+    case 'SET_SHOW_ADD_COMMUNITY':
+      return { ...state, showAddCommunity: action.value };
+  }
+}
+
 const PluginPanel: React.FC = () => {
-  const [plugins, setPlugins] = useState<Plugin[]>(() =>
-    BUILTIN_PLUGINS.map(p => ({
+  const [state, dispatch] = useReducer(reducer, undefined, () => ({
+    plugins: BUILTIN_PLUGINS.map(p => ({
       ...p,
       enabled: localStorage.getItem(`plugin_${p.id}`) !== 'false'
         || p.status === 'optional' ? localStorage.getItem(`plugin_${p.id}`) === 'true' : true
-    }))
-  );
-
-  const [expandedId, setExpandedId] = useState<string | null>('gbrain-memory');
-  const [configuringId, setConfiguringId] = useState<string | null>(null);
-  const [configValues, setConfigValues] = useState<Record<string, string>>({});
-  const [communityUrl, setCommunityUrl] = useState('');
-  const [adding, setAdding] = useState(false);
-  const [showAddCommunity, setShowAddCommunity] = useState(false);
+    })),
+    expandedId: 'gbrain-memory',
+    configuringId: null,
+    configValues: {},
+    communityUrl: '',
+    adding: false,
+    showAddCommunity: false,
+  }));
+  const { plugins, expandedId, configuringId, configValues, communityUrl, adding, showAddCommunity } = state;
+  const setPlugins          = (value: Plugin[] | ((prev: Plugin[]) => Plugin[])) => dispatch({ type: 'SET_PLUGINS', value });
+  const setExpandedId       = (value: string | null) => dispatch({ type: 'SET_EXPANDED_ID', value });
+  const setConfiguringId    = (value: string | null) => dispatch({ type: 'SET_CONFIGURING_ID', value });
+  const setConfigValues     = (value: Record<string, string> | ((prev: Record<string, string>) => Record<string, string>)) => dispatch({ type: 'SET_CONFIG_VALUES', value });
+  const setCommunityUrl     = (value: string) => dispatch({ type: 'SET_COMMUNITY_URL', value });
+  const setAdding           = (value: boolean) => dispatch({ type: 'SET_ADDING', value });
+  const setShowAddCommunity = (value: boolean) => dispatch({ type: 'SET_SHOW_ADD_COMMUNITY', value });
 
   const togglePlugin = (id: string) => {
     setPlugins(prev => prev.map(p => {

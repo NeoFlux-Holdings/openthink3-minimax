@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useReducer, useCallback } from 'react';
 import {
   Cloud, Upload, Download, GitPullRequest, RefreshCw,
   Check, AlertCircle, History, Package, Terminal, Cpu
@@ -129,19 +129,77 @@ function StatusDot({ ok, label }: { ok: boolean; label: string }) {
   );
 }
 
+type State = {
+  status: Status | null;
+  manifest: Manifest | null;
+  staged: boolean;
+  history: HistoryEntry[];
+  localMeta: BundleMeta | null;
+  busy: string | null;
+  log: string[];
+  error: string | null;
+};
+
+type Action =
+  | { type: 'SET_STATUS'; value: Status | null }
+  | { type: 'SET_MANIFEST'; value: Manifest | null }
+  | { type: 'SET_STAGED'; value: boolean }
+  | { type: 'SET_HISTORY'; value: HistoryEntry[] }
+  | { type: 'SET_LOCAL_META'; value: BundleMeta | null }
+  | { type: 'SET_BUSY'; value: string | null }
+  | { type: 'SET_LOG'; value: string[] | ((prev: string[]) => string[]) }
+  | { type: 'SET_ERROR'; value: string | null };
+
+function reducer(state: State, action: Action): State {
+  switch (action.type) {
+    case 'SET_STATUS':
+      return { ...state, status: action.value };
+    case 'SET_MANIFEST':
+      return { ...state, manifest: action.value };
+    case 'SET_STAGED':
+      return { ...state, staged: action.value };
+    case 'SET_HISTORY':
+      return { ...state, history: action.value };
+    case 'SET_LOCAL_META':
+      return { ...state, localMeta: action.value };
+    case 'SET_BUSY':
+      return { ...state, busy: action.value };
+    case 'SET_LOG':
+      return {
+        ...state,
+        log: typeof action.value === 'function'
+          ? action.value(state.log)
+          : action.value,
+      };
+    case 'SET_ERROR':
+      return { ...state, error: action.value };
+  }
+}
+
 export default function CloudflareSyncPanel({ apiBase }: CloudflareSyncPanelProps) {
   const base = apiBase || API_BASE;
-  const [status, setStatus] = useState<Status | null>(null);
-  const [manifest, setManifest] = useState<Manifest | null>(null);
-  const [staged, setStaged] = useState(false);
-  const [history, setHistory] = useState<HistoryEntry[]>([]);
-  const [localMeta, setLocalMeta] = useState<BundleMeta | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [log, setLog] = useState<string[]>(() => {
-    const stored = localStorage.getItem(LSK.lastPullTs);
-    return stored ? [`Last pull: ${relTime(parseInt(stored, 10))}`] : [];
-  });
-  const [error, setError] = useState<string | null>(null);
+  const [state, dispatch] = useReducer(reducer, undefined, () => ({
+    status: null,
+    manifest: null,
+    staged: false,
+    history: [] as HistoryEntry[],
+    localMeta: null,
+    busy: null,
+    log: (() => {
+      const stored = localStorage.getItem(LSK.lastPullTs);
+      return stored ? [`Last pull: ${relTime(parseInt(stored, 10))}`] : [];
+    })(),
+    error: null,
+  }));
+  const { status, manifest, staged, history, localMeta, busy, log, error } = state;
+  const setStatus     = (value: Status | null) => dispatch({ type: 'SET_STATUS', value });
+  const setManifest   = (value: Manifest | null) => dispatch({ type: 'SET_MANIFEST', value });
+  const setStaged     = (value: boolean) => dispatch({ type: 'SET_STAGED', value });
+  const setHistory    = (value: HistoryEntry[]) => dispatch({ type: 'SET_HISTORY', value });
+  const setLocalMeta  = (value: BundleMeta | null) => dispatch({ type: 'SET_LOCAL_META', value });
+  const setBusy       = (value: string | null) => dispatch({ type: 'SET_BUSY', value });
+  const setLog        = (value: string[] | ((prev: string[]) => string[])) => dispatch({ type: 'SET_LOG', value });
+  const setError      = (value: string | null) => dispatch({ type: 'SET_ERROR', value });
 
   const append = (s: string) => setLog(l => [...l, s]);
 

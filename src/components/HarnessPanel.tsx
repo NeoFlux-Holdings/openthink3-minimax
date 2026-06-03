@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useReducer, useEffect } from 'react';
 import { Cpu, DollarSign, Activity, Shield, Brain, BarChart2, Puzzle, Dock } from 'lucide-react';
 import BrainPanel from './BrainPanel';
 import BenchmarkPanel from './BenchmarkPanel';
@@ -54,20 +54,67 @@ const premiumModels = [
   }
 ];
 
+type State = {
+  activeTab: Tab;
+  localModel: string;
+  latency: number;
+  speed: number;
+  cost: number;
+};
+
+type Action =
+  | { type: 'SET_ACTIVE_TAB'; value: Tab }
+  | { type: 'SET_LOCAL_MODEL'; value: string }
+  | { type: 'SET_LATENCY'; value: number | ((prev: number) => number) }
+  | { type: 'SET_SPEED'; value: number | ((prev: number) => number) };
+
+function reducer(state: State, action: Action): State {
+  switch (action.type) {
+    case 'SET_ACTIVE_TAB':
+      return { ...state, activeTab: action.value };
+    case 'SET_LOCAL_MODEL':
+      return { ...state, localModel: action.value };
+    case 'SET_LATENCY':
+      return {
+        ...state,
+        latency: typeof action.value === 'function'
+          ? action.value(state.latency)
+          : action.value,
+      };
+    case 'SET_SPEED':
+      return {
+        ...state,
+        speed: typeof action.value === 'function'
+          ? action.value(state.speed)
+          : action.value,
+      };
+  }
+}
+
 const HarnessPanel: React.FC<HarnessPanelProps> = ({ isPoppedOut = false, selectedModel: propsModel, onModelChange }) => {
-  const [activeTab, setActiveTab] = useState<Tab>('harness');
-  const [localModel, setLocalModel] = useState<string>(() => {
-    try {
-      const saved = localStorage.getItem('openthink_active_model');
-      if (saved && saved !== '@cf/meta/llama-3.1-8b-instruct') {
-        return saved;
+  const [state, dispatch] = useReducer(reducer, undefined, () => ({
+    activeTab: 'harness' as Tab,
+    localModel: (() => {
+      try {
+        const saved = localStorage.getItem('openthink_active_model');
+        if (saved && saved !== '@cf/meta/llama-3.1-8b-instruct') {
+          return saved;
+        }
+        localStorage.setItem('openthink_active_model', '@cf/meta/llama-3.1-8b-instruct');
+        return '@cf/meta/llama-3.1-8b-instruct';
+      } catch {
+        return '@cf/meta/llama-3.1-8b-instruct';
       }
-      localStorage.setItem('openthink_active_model', '@cf/meta/llama-3.1-8b-instruct');
-      return '@cf/meta/llama-3.1-8b-instruct';
-    } catch {
-      return '@cf/meta/llama-3.1-8b-instruct';
-    }
-  });
+    })(),
+    latency: 140,
+    speed: 38.5,
+    cost: 0.0024,
+  }));
+  const { activeTab, localModel, latency, speed, cost } = state;
+  const setActiveTab = (value: Tab) => dispatch({ type: 'SET_ACTIVE_TAB', value });
+  const setLocalModel = (value: string) => dispatch({ type: 'SET_LOCAL_MODEL', value });
+  const setLatency = (value: number | ((prev: number) => number)) => dispatch({ type: 'SET_LATENCY', value });
+  const setSpeed = (value: number | ((prev: number) => number)) => dispatch({ type: 'SET_SPEED', value });
 
   // Use state synced with parent if provided
   const activeModel = propsModel ?? localModel;
@@ -87,10 +134,6 @@ const HarnessPanel: React.FC<HarnessPanelProps> = ({ isPoppedOut = false, select
   };
 
   // Live mock metric generators
-  const [latency, setLatency] = useState(140);
-  const [speed, setSpeed] = useState(38.5);
-  const [cost] = useState(0.0024);
-
   useEffect(() => {
     const interval = setInterval(() => {
       // Simulate real-time minor jitter

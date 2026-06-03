@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useReducer, type Dispatch, type SetStateAction } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { Pin } from 'lucide-react';
 import Sidebar from './components/Sidebar';
@@ -27,22 +27,36 @@ export interface ThreadInfo {
 
 export type CanvasTab = 'canvas' | 'pierre' | 'harness' | 'library' | 'learning' | 'skills' | 'settings' | 'account' | 'desktop';
 
-const AppView = () => {
-  const bp = useBreakpoint();
-  const isMobile = bp === 'mobile';
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [activeThreadId, setActiveThreadId] = useState<string | null>(() => {
-    return localStorage.getItem('openthink_active_thread_id');
-  });
-  const [initialPrompt, setInitialPrompt] = useState<string | null>(null);
-  const [activeCanvasTab, setActiveCanvasTab] = useState<CanvasTab>(() => {
-    return (localStorage.getItem('openthink_active_canvas_tab') as CanvasTab) || 'canvas';
-  });
-  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
-  const [mobileTab, setMobileTab] = useState<MobileTab>('chat');
-  const [mobileSummariesOpen, setMobileSummariesOpen] = useState(false);
+type AppViewState = {
+  isSidebarCollapsed: boolean;
+  activeThreadId: string | null;
+  initialPrompt: string | null;
+  activeCanvasTab: CanvasTab;
+  mobileDrawerOpen: boolean;
+  mobileTab: MobileTab;
+  mobileSummariesOpen: boolean;
+  recentThreads: ThreadInfo[];
+};
 
-  const [recentThreads, setRecentThreads] = useState<ThreadInfo[]>(() => {
+type AppViewAction =
+  | { type: 'setIsSidebarCollapsed'; value: boolean | ((prev: boolean) => boolean) }
+  | { type: 'setActiveThreadId'; value: string | null | ((prev: string | null) => string | null) }
+  | { type: 'setInitialPrompt'; value: string | null | ((prev: string | null) => string | null) }
+  | { type: 'setActiveCanvasTab'; value: CanvasTab | ((prev: CanvasTab) => CanvasTab) }
+  | { type: 'setMobileDrawerOpen'; value: boolean | ((prev: boolean) => boolean) }
+  | { type: 'setMobileTab'; value: MobileTab | ((prev: MobileTab) => MobileTab) }
+  | { type: 'setMobileSummariesOpen'; value: boolean | ((prev: boolean) => boolean) }
+  | { type: 'setRecentThreads'; value: ThreadInfo[] | ((prev: ThreadInfo[]) => ThreadInfo[]) };
+
+const initAppViewState = (): AppViewState => ({
+  isSidebarCollapsed: false,
+  activeThreadId: localStorage.getItem('openthink_active_thread_id'),
+  initialPrompt: null,
+  activeCanvasTab: (localStorage.getItem('openthink_active_canvas_tab') as CanvasTab) || 'canvas',
+  mobileDrawerOpen: false,
+  mobileTab: 'chat',
+  mobileSummariesOpen: false,
+  recentThreads: (() => {
     try {
       const saved = localStorage.getItem('openthink_threads:v1');
       if (!saved) return [];
@@ -52,7 +66,93 @@ const AppView = () => {
     } catch {
       return [];
     }
-  });
+  })(),
+});
+
+const appViewReducer = (state: AppViewState, action: AppViewAction): AppViewState => {
+  switch (action.type) {
+    case 'setIsSidebarCollapsed':
+      return {
+        ...state,
+        isSidebarCollapsed:
+          typeof action.value === 'function' ? action.value(state.isSidebarCollapsed) : action.value,
+      };
+    case 'setActiveThreadId':
+      return {
+        ...state,
+        activeThreadId:
+          typeof action.value === 'function' ? action.value(state.activeThreadId) : action.value,
+      };
+    case 'setInitialPrompt':
+      return {
+        ...state,
+        initialPrompt:
+          typeof action.value === 'function' ? action.value(state.initialPrompt) : action.value,
+      };
+    case 'setActiveCanvasTab':
+      return {
+        ...state,
+        activeCanvasTab:
+          typeof action.value === 'function' ? action.value(state.activeCanvasTab) : action.value,
+      };
+    case 'setMobileDrawerOpen':
+      return {
+        ...state,
+        mobileDrawerOpen:
+          typeof action.value === 'function' ? action.value(state.mobileDrawerOpen) : action.value,
+      };
+    case 'setMobileTab':
+      return {
+        ...state,
+        mobileTab:
+          typeof action.value === 'function' ? action.value(state.mobileTab) : action.value,
+      };
+    case 'setMobileSummariesOpen':
+      return {
+        ...state,
+        mobileSummariesOpen:
+          typeof action.value === 'function' ? action.value(state.mobileSummariesOpen) : action.value,
+      };
+    case 'setRecentThreads':
+      return {
+        ...state,
+        recentThreads:
+          typeof action.value === 'function' ? action.value(state.recentThreads) : action.value,
+      };
+  }
+};
+
+const AppView = () => {
+  const bp = useBreakpoint();
+  const isMobile = bp === 'mobile';
+  const [state, dispatch] = useReducer(appViewReducer, undefined, initAppViewState);
+  const {
+    isSidebarCollapsed,
+    activeThreadId,
+    initialPrompt,
+    activeCanvasTab,
+    mobileDrawerOpen,
+    mobileTab,
+    mobileSummariesOpen,
+    recentThreads,
+  } = state;
+
+  const setIsSidebarCollapsed: Dispatch<SetStateAction<boolean>> = (v) =>
+    dispatch({ type: 'setIsSidebarCollapsed', value: v });
+  const setActiveThreadId: Dispatch<SetStateAction<string | null>> = (v) =>
+    dispatch({ type: 'setActiveThreadId', value: v });
+  const setInitialPrompt: Dispatch<SetStateAction<string | null>> = (v) =>
+    dispatch({ type: 'setInitialPrompt', value: v });
+  const setActiveCanvasTab: Dispatch<SetStateAction<CanvasTab>> = (v) =>
+    dispatch({ type: 'setActiveCanvasTab', value: v });
+  const setMobileDrawerOpen: Dispatch<SetStateAction<boolean>> = (v) =>
+    dispatch({ type: 'setMobileDrawerOpen', value: v });
+  const setMobileTab: Dispatch<SetStateAction<MobileTab>> = (v) =>
+    dispatch({ type: 'setMobileTab', value: v });
+  const setMobileSummariesOpen: Dispatch<SetStateAction<boolean>> = (v) =>
+    dispatch({ type: 'setMobileSummariesOpen', value: v });
+  const setRecentThreads: Dispatch<SetStateAction<ThreadInfo[]>> = (v) =>
+    dispatch({ type: 'setRecentThreads', value: v });
 
   useEffect(() => {
     localStorage.setItem('openthink_threads:v1', JSON.stringify(recentThreads));

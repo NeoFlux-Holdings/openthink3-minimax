@@ -48,24 +48,28 @@ async function run() {
   try {
     let page = 1;
     let allZones = [];
-    while (true) {
-      const response = await fetch(`https://api.cloudflare.com/client/v4/zones?page=${page}&per_page=50`, {
+    const fetchPage = async (p) => {
+      const response = await fetch(`https://api.cloudflare.com/client/v4/zones?page=${p}&per_page=50`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
       });
-      const data = await response.json();
+      return await response.json();
+    };
+    const paginateAllZones = async () => {
+      const data = await fetchPage(page);
       if (!data.success) {
         throw new Error(JSON.stringify(data.errors));
       }
       allZones = allZones.concat(data.result);
       const totalCount = data.result_info?.total_count || 0;
       const totalPages = Math.ceil(totalCount / 50);
-      if (page >= totalPages || data.result.length === 0) {
-        break;
+      if (page < totalPages && data.result.length > 0) {
+        page++;
+        await paginateAllZones();
       }
-      page++;
-    }
+    };
+    await paginateAllZones();
     const domains = allZones.map(z => z.name);
     console.log(`Successfully fetched ${domains.length} domains from Cloudflare.`);
     fs.writeFileSync(targetPath, JSON.stringify(domains, null, 2));

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useEffectEvent } from 'react';
+import React, { useRef, useEffect, useEffectEvent, useReducer } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import { ChevronRight, Globe, CheckCircle2 } from 'lucide-react';
@@ -31,9 +31,35 @@ interface MessageData {
   tools?: { name: string, icon: string }[];
 }
 
+type ThreadState = { messages: MessageData[]; apiError: string | null };
+type ThreadAction =
+  | { type: 'setMessages'; value: MessageData[] }
+  | { type: 'setApiError'; value: string | null }
+  | { type: 'appendMessages'; value: MessageData[] }
+  | { type: 'mapMessage'; id: string; patch: Partial<MessageData> };
+
+const threadReducer = (state: ThreadState, action: ThreadAction): ThreadState => {
+  switch (action.type) {
+    case 'setMessages': return { ...state, messages: action.value };
+    case 'setApiError': return { ...state, apiError: action.value };
+    case 'appendMessages': return { ...state, messages: [...state.messages, ...action.value] };
+    case 'mapMessage': return { ...state, messages: state.messages.map(m => m.id === action.id ? { ...m, ...action.patch } : m) };
+    default: return state;
+  }
+};
+
 const ThreadFeed: React.FC<ThreadFeedProps> = ({ threadId, initialPrompt, threadTitle, onOpenMenu, isMobile }) => {
-  const [messages, setMessages] = useState<MessageData[]>([]);
-  const [apiError, setApiError] = useState<string | null>(null);
+  const [threadState, dispatchThread] = useReducer(threadReducer, { messages: [], apiError: null });
+  const messages = threadState.messages;
+  const apiError = threadState.apiError;
+  const setMessages = (value: MessageData[] | ((prev: MessageData[]) => MessageData[])) => {
+    if (typeof value === 'function') {
+      dispatchThread({ type: 'setMessages', value: value(threadState.messages) });
+    } else {
+      dispatchThread({ type: 'setMessages', value });
+    }
+  };
+  const setApiError = (value: string | null) => dispatchThread({ type: 'setApiError', value });
   const navigate = useNavigate();
 
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -43,9 +69,8 @@ const ThreadFeed: React.FC<ThreadFeedProps> = ({ threadId, initialPrompt, thread
     const value = getInput();
     localStorage.setItem(`openthink_draft_input_${threadId}`, value);
   };
-  const [pendingCount, setPendingCount] = useState(0);
-  const isLoading = pendingCount > 0;
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const isLoading = messages.some(m => !m.isUser && (m.status === 'Thinking...' || m.content === ''));
 
   useEffect(() => {
     const stored = localStorage.getItem(`openthink_draft_input_${threadId}`);
@@ -64,7 +89,6 @@ const ThreadFeed: React.FC<ThreadFeedProps> = ({ threadId, initialPrompt, thread
 
   const loadHistory = useEffectEvent(async () => {
     if (initialPrompt) return;
-    setPendingCount(c => c + 1);
     setApiError(null);
     try {
       const response = await fetch(`${getApiUrl()}/api/thread/${threadId}/history`);
@@ -85,7 +109,6 @@ const ThreadFeed: React.FC<ThreadFeedProps> = ({ threadId, initialPrompt, thread
       console.error("Failed to load thread history:", err);
       setApiError(err instanceof Error ? err.message : String(err));
     } finally {
-      setPendingCount(c => c - 1);
     }
   });
 
@@ -110,7 +133,6 @@ const ThreadFeed: React.FC<ThreadFeedProps> = ({ threadId, initialPrompt, thread
 
     if (inputRef.current) inputRef.current.value = '';
     localStorage.removeItem(`openthink_draft_input_${threadId}`);
-    setPendingCount(c => c + 1);
 
     const newMsgId = Date.now().toString();
     setMessages(prev => [...prev, { id: newMsgId, isUser: true, content: userMsg }]);
@@ -130,42 +152,51 @@ const ThreadFeed: React.FC<ThreadFeedProps> = ({ threadId, initialPrompt, thread
       if (!response.body) throw new Error('No readable stream');
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
-
-      let done = false;
       let buffer = "";
-      while (!done) {
-        const { value, done: doneReading } = await reader.read();
-        done = doneReading;
-        if (value) {
-          const chunk = decoder.decode(value, { stream: true });
-          buffer += chunk;
 
-          const parts = buffer.split("\n");
-          buffer = parts.pop() ?? "";
-          for (const rawLine of parts) {
-            const line = rawLine.trim();
-            if (!line.startsWith('data: ')) continue;
-            if (line === 'data: [DONE]') continue;
-            try {
-              const data = JSON.parse(line.slice(6));
+      const processChunk = (value: Uint8Array | undefined) => {
+        if (!value) return;
+        const chunk = decoder.decode(value, { stream: true });
+        buffer += chunk;
 
-              if (data.status) {
-                setMessages(prev => prev.map(m =>
-                  m.id === agentMsgId ? { ...m, status: data.status } : m
-                ));
-              }
+        const parts = buffer.split("\n");
+        buffer = parts.pop() ?? "";
+        for (const rawLine of parts) {
+          const line = rawLine.trim();
+          if (!line.startsWith('data: ')) continue;
+          if (line === 'data: [DONE]') continue;
+          try {
+            const data = JSON.parse(line.slice(6));
 
-              if (data.response) {
-                setMessages(prev => prev.map(m =>
-                  m.id === agentMsgId ? { ...m, content: m.content + data.response, status: undefined } : m
-                ));
-              }
-            } catch (e) {
-              // Ignore JSON parse errors on incomplete lines
+            if (data.status) {
+              setMessages(prev => prev.map(m =>
+                m.id === agentMsgId ? { ...m, status: data.status } : m
+              ));
             }
+
+            if (data.response) {
+              setMessages(prev => prev.map(m =>
+                m.id === agentMsgId ? { ...m, content: m.content + data.response, status: undefined } : m
+              ));
+            }
+          } catch (e) {
+            // Ignore JSON parse errors on incomplete lines
           }
         }
-      }
+      };
+      const readNext = async (): Promise<boolean> => {
+        const result = await reader.read();
+        if (result.done) return false;
+        processChunk(result.value);
+        return true;
+      };
+      const drainStream = async () => {
+        const keepReading = await readNext();
+        if (keepReading) {
+          await drainStream();
+        }
+      };
+      await drainStream();
     } catch (error) {
       console.error(error);
       const errMsg = error instanceof Error ? error.message : String(error);
@@ -174,7 +205,6 @@ const ThreadFeed: React.FC<ThreadFeedProps> = ({ threadId, initialPrompt, thread
         m.id === agentMsgId ? { ...m, content: 'Error communicating with the agent.', status: undefined } : m
       ));
     } finally {
-      setPendingCount(c => c - 1);
     }
   };
 
