@@ -1,14 +1,16 @@
 // ──────────────────────────────────────────────────────────────────────────
 // OpenThink3 Worker — Cloudflare Worker entry point.
 //
-// Chat history is currently backed by the THREAD_DO Durable Object (which
-// persists to the MEMORIES KV namespace). The PGlite-backed schema in
-// ./db.ts is a v0 design draft and is NOT yet imported here — PGlite's
-// WASM init throws "Invalid URL string" inside the V8 isolate. The
-// migration plan is to bootstrap PGlite inside `THREAD_DO` (per-thread
-// Durable Object) with an R2-backed `dataDir`, then re-enable the
-// /api/thread/:id/history and /api/memory/recall endpoints that consume
-// it. See `docs/ROADMAP.md` Phase 0B.
+// Storage layout (all CF-native, no external services):
+//   - MEMORIES (KV)     → thread chat history (via THREAD_DO)
+//   - ARTIFACTS (KV)    → deploy bundles, manifests, sync state
+//   - OPENTHINK3_DB (D1) → gbrain pages, edges, signals, threads, benchmarks
+//   - GBRAIN_PAGES (Vectorize) → 384-dim BGE embeddings for semantic recall
+//   - THREAD_DO (DO)    → per-thread stateful agent + chat streaming
+//   - ORCHESTRATOR_DO   → MCP server for gstack tool calls
+//
+// Skill routes (gbrain + gstack) live at /api/skill/{search,think,capture,run,evals}
+// and are invoked by the SkillsPanel + ThreadFeed on the frontend.
 // ──────────────────────────────────────────────────────────────────────────
 // TODO: when CF Cron Triggers ship (Phase 3), dispatch all 'cron-daily' hooks
 
@@ -16,6 +18,14 @@ import { Agent } from "agents";
 import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import {
+  handleCapture,
+  handleSearch,
+  handleThink,
+  handleRun,
+  handleEvals,
+  handleDream,
+} from "./skills.js";
 
 export interface Env {
   AI: any;
@@ -23,6 +33,8 @@ export interface Env {
   ARTIFACTS: KVNamespace;
   THREAD_DO: DurableObjectNamespace<ThreadDO>;
   ORCHESTRATOR_DO: DurableObjectNamespace<OrchestratorDO>;
+  OPENTHINK3_DB: D1Database;
+  GBRAIN_PAGES: VectorizeIndex;
   // New intelligence stack secrets
   EXE_DEV_TOKEN?: string;
   GBRAIN_VM_URL?: string;
@@ -358,8 +370,86 @@ async function execOnVM(env: Env, command: string): Promise<{ ok: boolean; outpu
   }
 }
 
+// ── Skill route dispatcher ─────────────────────────────────────────────
+async function handleSkillRoute(env: Env, request: Request, url: URL, ctx: ExecutionContext): Promise<Response> {
+  const route = url.pathname.replace(/^\/api\/skill\//, "");
+  if (request.method !== "POST") {
+    return jsonResp({ error: `Method ${request.method} not allowed` }, 405);
+  }
+
+  switch (route) {
+    case "capture": {
+      const body = (await request.json().catch(() => ({}))) as Parameters<typeof handleCapture>[1];
+      if (!body.threadId || !body.type || !body.content) {
+        return jsonResp({ error: "threadId, type, content are required" }, 400);
+      }
+      const r = await handleCapture(env, body);
+      return jsonResp(r);
+    }
+    case "search": {
+      const body = (await request.json().catch(() => ({}))) as Parameters<typeof handleSearch>[1];
+      if (!body.query) return jsonResp({ error: "query is required" }, 400);
+      const r = await handleSearch(env, body);
+      return jsonResp(r);
+    }
+    case "think": {
+      const body = (await request.json().catch(() => ({}))) as Parameters<typeof handleThink>[1];
+      if (!body.query) return jsonResp({ error: "query is required" }, 400);
+      // Return SSE stream.
+      const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
+      const writer = writable.getWriter();
+      const encoder = new TextEncoder();
+      // Fire and forget; the writer is closed by handleThink.
+      ctx.waitUntil(handleThink(env, body, writer, encoder));
+      return new Response(readable, {
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+          ...corsHeaders(),
+        },
+      });
+    }
+    case "run": {
+      const body = (await request.json().catch(() => ({}))) as Parameters<typeof handleRun>[1];
+      if (!body.command) return jsonResp({ error: "command is required" }, 400);
+      const r = await handleRun(env, body);
+      return jsonResp(r);
+    }
+    case "evals": {
+      const body = ((await request.json().catch(() => ({}))) ?? {}) as Parameters<typeof handleEvals>[1];
+      const r = await handleEvals(env, body);
+      return jsonResp(r);
+    }
+    default:
+      return jsonResp({ error: `Unknown skill route: ${route}` }, 404);
+  }
+}
+
 // Main Worker routing
 export default {
+  // ── Cron trigger handler ─────────────────────────────────────────────
+  // Two crons configured in wrangler.toml:
+  //   "0 5 * * *"  → gbrain-dream (nightly memory consolidation)
+  //   "0 6 * * *"  → gbrain-evals (eval suite scorecard)
+  async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    const cron = controller.cron;
+    console.log(`[cron] firing: ${cron}`);
+    if (cron === "0 5 * * *") {
+      ctx.waitUntil(
+        handleDream(env).then((r) => console.log("[cron] gbrain-dream", JSON.stringify(r))),
+      );
+    } else if (cron === "0 6 * * *") {
+      ctx.waitUntil(
+        handleEvals(env, { suite: "cron-daily" }).then((r) =>
+          console.log(`[cron] gbrain-evals score=${r.score} (${r.passed}/${r.total})`),
+        ),
+      );
+    } else {
+      console.log(`[cron] unhandled cron: ${cron}`);
+    }
+  },
+
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
@@ -544,12 +634,22 @@ export default {
       }
     }
 
+    // ── Skill routes (gbrain + gstack) (/api/skill/*) ───────────
+    if (url.pathname.startsWith("/api/skill/")) {
+      if (request.method === "OPTIONS") {
+        return new Response(null, { headers: corsHeaders() });
+      }
+      try {
+        return await handleSkillRoute(env, request, url, ctx);
+      } catch (err: any) {
+        return jsonResp({ error: err?.message ?? String(err) }, 500);
+      }
+    }
+
     // ── Thread routing (existing) ───────────────────────────────
-    // NOTE: PGlite-backed `/api/thread/:id/history` and `/api/memory/recall`
-    // endpoints are defined in `db.ts` and will be re-enabled once PGlite
-    // runs inside a Durable Object with R2-backed `dataDir` (see
-    // `docs/ROADMAP.md` Phase 0B). In the V8 isolate, PGlite's WASM init
-    // throws "Invalid URL string" on `import.meta.url`; the fix is to
+    // gbrain history (capture) is at /api/skill/capture and stores to
+    // D1+Vectorize. The legacy /api/thread/:id/history endpoint is still
+    // served by THREAD_DO (MEMORIES KV) for the chat streaming UI.
     // bootstrap PGlite inside `THREAD_DO` so the data dir is per-isolate
     // and persistent.
     if (url.pathname.startsWith("/api/thread/")) {

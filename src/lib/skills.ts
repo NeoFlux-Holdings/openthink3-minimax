@@ -11,6 +11,7 @@ export type ConfigField = {
   type: 'url' | 'password' | 'text';
   required: boolean;
   placeholder?: string;
+  description?: string;
 };
 
 export type Skill = {
@@ -23,74 +24,73 @@ export type Skill = {
   triggerKeywords: string[];
   configFields: ConfigField[];
   premium?: boolean;
+  status: 'native' | 'external';
 };
 
 export const SKILLS: Skill[] = [
   {
     id: 'gbrain-search',
     name: 'Brain Search',
-    description: "Hybrid retrieval across the user's brain. Surfaces top pages by vector + BM25 + RRF + graph signals.",
+    description:
+      'Hybrid recall: vector search (BGE-small) over D1 pages + FTS5 keyword search. Re-ranks with combined score.',
     defaultEnabled: true,
-    requiresConfig: true,
-    workerEndpoint: '/api/gbrain/search',
+    requiresConfig: false,
+    workerEndpoint: '/api/skill/search',
     triggerKeywords: ['search', 'recall', 'find', 'lookup', 'what did', 'where is'],
-    configFields: [
-      { key: 'gbrainUrl', label: 'Brain server URL', type: 'url', required: true, placeholder: 'https://brain.example.com' },
-      { key: 'gbrainToken', label: 'Auth token', type: 'password', required: true, placeholder: 'gbrain_xxx' },
-    ],
+    configFields: [],
+    status: 'native',
   },
   {
     id: 'gbrain-think',
     name: 'Brain Think',
-    description: 'Synthesis layer: composes a prose answer with citations + gap analysis. Costs LLM.',
+    description:
+      'Synthesis layer: recalls relevant pages, then streams a Llama 3.3 70B answer with citations.',
     defaultEnabled: true,
-    requiresConfig: true,
-    workerEndpoint: '/api/gbrain/think',
+    requiresConfig: false,
+    workerEndpoint: '/api/skill/think',
     triggerKeywords: ['think', 'synthesize', 'explain', 'summarize', 'what do i know'],
-    configFields: [
-      { key: 'gbrainUrl', label: 'Brain server URL', type: 'url', required: true },
-      { key: 'gbrainToken', label: 'Auth token', type: 'password', required: true },
-    ],
+    configFields: [],
+    status: 'native',
   },
   {
     id: 'gbrain-capture',
     name: 'Brain Capture',
-    description: "Write a new page to the user's brain from a chat message or selected text.",
+    description:
+      'Write a new page to gbrain (D1 + Vectorize + FTS5) from a chat message or selected text.',
     defaultEnabled: true,
-    requiresConfig: true,
-    workerEndpoint: '/api/gbrain/capture',
+    requiresConfig: false,
+    workerEndpoint: '/api/skill/capture',
     triggerKeywords: ['capture', 'remember', 'save to brain', 'note this'],
-    configFields: [
-      { key: 'gbrainUrl', label: 'Brain server URL', type: 'url', required: true },
-      { key: 'gbrainToken', label: 'Auth token', type: 'password', required: true },
-    ],
+    configFields: [],
+    status: 'native',
   },
   {
     id: 'gstack-run',
     name: 'GStack Run',
-    description: 'Execution stack: pick the right path, run cron jobs, deploy, open PRs, manage tunnels.',
+    description:
+      'Execution stack: dispatches commands to the OrchestratorDO MCP server. Cloudflare-native tools.',
     defaultEnabled: true,
-    requiresConfig: true,
-    workerEndpoint: '/api/gstack/run',
+    requiresConfig: false,
+    workerEndpoint: '/api/skill/run',
     triggerKeywords: ['deploy', 'run', 'execute', 'schedule', 'tunnel', 'pr'],
-    configFields: [
-      { key: 'gstackUrl', label: 'GStack server URL', type: 'url', required: true },
-    ],
+    configFields: [],
+    status: 'native',
   },
   {
     id: 'gbrain-evals',
     name: 'Brain Evals',
-    description: 'Run gbrain-evals benchmark nightly, post scorecards to /benchmarks on the deployed site.',
-    defaultEnabled: false,
+    description:
+      'Runs the in-worker eval suite (Llama 3.1 8B) nightly via cron, posts scorecards to the benchmarks page.',
+    defaultEnabled: true,
     requiresConfig: false,
-    workerEndpoint: '/api/gbrain/evals/run',
+    workerEndpoint: '/api/skill/evals',
     triggerKeywords: ['benchmark', 'eval', 'scorecard'],
     configFields: [],
+    status: 'native',
   },
 ];
 
 const enabledKey = (id: SkillId) => `openthink_skill_${id}_enabled`;
-const configKey = (id: SkillId) => `openthink_skill_${id}_config`;
 
 export function getSkill(id: SkillId): Skill | undefined {
   return SKILLS.find((s) => s.id === id);
@@ -109,40 +109,8 @@ export function setSkillEnabled(id: SkillId, enabled: boolean): void {
   window.dispatchEvent(new Event('storage'));
 }
 
-export function getSkillConfig(id: SkillId): Record<string, string> {
-  if (typeof window === 'undefined') return {};
-  const raw = localStorage.getItem(configKey(id));
-  if (!raw) return {};
-  try {
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return parsed as Record<string, string>;
-    }
-  } catch {
-    return {};
-  }
-  return {};
-}
-
-export function setSkillConfig(id: SkillId, config: Record<string, string>): void {
-  if (typeof window === 'undefined') return;
-  localStorage.setItem(configKey(id), JSON.stringify(config));
-  window.dispatchEvent(new Event('storage'));
-}
-
 export function isSkillConfigured(id: SkillId): boolean {
-  const skill = getSkill(id);
-  if (!skill || !skill.requiresConfig) return true;
-  const config = getSkillConfig(id);
-  return skill.configFields
-    .filter((f) => f.required)
-    .every((f) => (config[f.key] ?? '').trim().length > 0);
-}
-
-export function clearSkillConfig(id: SkillId): void {
-  if (typeof window === 'undefined') return;
-  localStorage.removeItem(configKey(id));
-  window.dispatchEvent(new Event('storage'));
+  return true; // all skills are native + auto-configured
 }
 
 const hasKeyword = (haystack: string, needle: string) => haystack.indexOf(needle) !== -1;
@@ -177,7 +145,7 @@ export function buildSkillInvocation(message: string): SkillInvocation | null {
     skill,
     request: {
       prompt: message,
-      config: getSkillConfig(skill.id),
+      config: {},
     },
   };
 }

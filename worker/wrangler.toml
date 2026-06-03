@@ -30,6 +30,24 @@ class_name = "OrchestratorDO"
 tag = "v1"
 new_sqlite_classes = ["ThreadDO", "OrchestratorDO"]
 
+# gbrain: relational store (pages, edges, signals, threads, benchmarks).
+# Created with: npx wrangler d1 create openthink3-db
+[[d1_databases]]
+binding = "OPENTHINK3_DB"
+database_name = "openthink3-db"
+database_id = "afd1e794-f54d-4524-b9b0-10ba6500ee3e"
+
+# gbrain: 384-dim BGE-small embeddings for semantic recall.
+# Created with: npx wrangler vectorize create gbrain-pages --dimensions=384 --metric=cosine
+[[vectorize]]
+binding = "GBRAIN_PAGES"
+index_name = "gbrain-pages"
+
+# gbrain-dream (nightly memory consolidation) + gbrain-evals (eval suite).
+# Cron expressions: 5am UTC = midnight EST, 6am UTC = 1am EST.
+[triggers]
+crons = ["0 5 * * *", "0 6 * * *"]
+
 # Non-secret environment variables. Set with:
 #   npx wrangler secret put CF_API_TOKEN
 #   npx wrangler secret put GH_TOKEN

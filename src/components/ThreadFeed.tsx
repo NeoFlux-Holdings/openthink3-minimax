@@ -144,7 +144,7 @@ const ThreadFeed: React.FC<ThreadFeedProps> = ({ threadId, initialPrompt, thread
   }, [initialPrompt]);
 
   const runSkill = async (userMsg: string, userMsgId: string): Promise<{ summary: string; skill: Skill } | null> => {
-    const hookResults = await dispatchChatMessageBefore(userMsg, threadId);
+    const hookResults = await dispatchChatMessageBefore(userMsg, threadId, getApiUrl());
     const summary = summarizePluginHooks(hookResults);
     if (summary) {
       setMessages(prev => prev.map(m =>
@@ -162,10 +162,11 @@ const ThreadFeed: React.FC<ThreadFeedProps> = ({ threadId, initialPrompt, thread
         : m
     ));
     try {
+      const body = buildSkillRequestBody(skill, userMsg, threadId);
       const res = await fetch(skillWorkerUrl(skill, getApiUrl()), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: request.prompt, config: request.config, threadId }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error(`Skill ${skill.id} responded ${res.status}`);
       const data = await res.json();
@@ -352,30 +353,46 @@ const ThreadFeed: React.FC<ThreadFeedProps> = ({ threadId, initialPrompt, thread
 const summarizeSkillResult = (skill: Skill, data: any): string => {
   if (!data || typeof data !== 'object') return 'returned no data';
   if (skill.id === 'gbrain-search') {
-    const count = Array.isArray(data.results)
-      ? data.results.length
-      : Array.isArray(data)
-        ? data.length
-        : 0;
-    return `injected ${count} ${count === 1 ? 'page' : 'pages'}`;
+    const count = Array.isArray(data.results) ? data.results.length : 0;
+    return `recalled ${count} ${count === 1 ? 'page' : 'pages'}`;
   }
   if (skill.id === 'gbrain-think') {
-    const answer = typeof data.answer === 'string' ? data.answer : data.response;
-    if (typeof answer === 'string') return `synthesis: ${answer.slice(0, 120)}${answer.length > 120 ? '…' : ''}`;
-    return 'synthesis complete';
+    return 'synthesis complete (streamed above)';
   }
   if (skill.id === 'gbrain-capture') {
-    return data.slug ? `captured as ${data.slug}` : 'captured';
+    return data.id ? `captured as ${data.id}` : 'captured';
   }
   if (skill.id === 'gstack-run') {
-    if (typeof data.task === 'string') return `ran ${data.task}`;
-    if (typeof data.status === 'string') return `status: ${data.status}`;
-    return 'execution complete';
+    return typeof data.tool === 'string' ? `dispatched via ${data.tool}` : 'execution complete';
   }
   if (skill.id === 'gbrain-evals') {
-    return typeof data.scorecard === 'object' ? 'scorecard posted' : 'benchmark complete';
+    if (typeof data.score === 'number') {
+      return `score ${Math.round(data.score * 100)}% (${data.passed}/${data.total})`;
+    }
+    return 'benchmark complete';
   }
   return 'complete';
+};
+
+const buildSkillRequestBody = (skill: Skill, userMsg: string, threadId: string): Record<string, unknown> => {
+  switch (skill.id) {
+    case 'gbrain-search':
+      return { query: userMsg, threadId, limit: 8 };
+    case 'gbrain-think':
+      return { query: userMsg, threadId };
+    case 'gbrain-capture':
+      return {
+        threadId,
+        type: 'message',
+        title: userMsg.slice(0, 80),
+        content: userMsg,
+        signal: 0.6,
+      };
+    case 'gstack-run':
+      return { command: userMsg, context: { threadId } };
+    case 'gbrain-evals':
+      return { suite: 'manual' };
+  }
 };
 
 export default ThreadFeed;

@@ -1,40 +1,27 @@
 import React, { useEffect, useReducer, useRef, useState } from 'react';
-import { X, Save, Search, BookOpen, StickyNote, Zap, Gauge, BellRing, ToggleLeft, ToggleRight } from 'lucide-react';
+import { X, Search, BookOpen, StickyNote, Zap, Gauge, ToggleLeft, ToggleRight } from 'lucide-react';
 import {
   SKILLS,
   type Skill,
   type SkillId,
   isSkillEnabled,
   setSkillEnabled,
-  getSkillConfig,
-  setSkillConfig,
-  isSkillConfigured,
 } from '../lib/skills';
 
 type PanelState = {
   activeId: SkillId | null;
-  configDraft: Record<string, string>;
-  savedAt: number;
 };
 
-type PanelAction =
-  | { type: 'OPEN'; id: SkillId; config: Record<string, string> }
-  | { type: 'CLOSE' }
-  | { type: 'PATCH_FIELD'; key: string; value: string }
-  | { type: 'SAVED' };
+type PanelAction = { type: 'OPEN'; id: SkillId } | { type: 'CLOSE' };
 
-const initialPanel: PanelState = { activeId: null, configDraft: {}, savedAt: 0 };
+const initialPanel: PanelState = { activeId: null };
 
 function panelReducer(state: PanelState, action: PanelAction): PanelState {
   switch (action.type) {
     case 'OPEN':
-      return { ...state, activeId: action.id, configDraft: { ...action.config } };
+      return { activeId: action.id };
     case 'CLOSE':
-      return { ...state, activeId: null, configDraft: {} };
-    case 'PATCH_FIELD':
-      return { ...state, configDraft: { ...state.configDraft, [action.key]: action.value } };
-    case 'SAVED':
-      return { ...state, savedAt: Date.now() };
+      return { activeId: null };
   }
 }
 
@@ -62,7 +49,7 @@ const SkillsPanel: React.FC = () => {
   const [state, dispatch] = useReducer(panelReducer, initialPanel);
   const [, setTick] = useState(0);
   const dialogRef = useRef<HTMLDialogElement>(null);
-  const { activeId, configDraft, savedAt } = state;
+  const { activeId } = state;
   const open = activeId !== null;
   const activeSkill = activeId ? SKILLS.find((s) => s.id === activeId) : null;
 
@@ -82,56 +69,27 @@ const SkillsPanel: React.FC = () => {
     }
   }, [open]);
 
-  const needsConfiguration = SKILLS.filter(
-    (s) => s.requiresConfig && !isSkillConfigured(s.id)
-  );
-
   const handleToggle = (skill: Skill) => {
     setSkillEnabled(skill.id, !isSkillEnabled(skill.id));
     setTick((t) => t + 1);
   };
 
-  const handleOpenConfig = (skill: Skill) => {
-    dispatch({ type: 'OPEN', id: skill.id, config: getSkillConfig(skill.id) });
-  };
-
-  const handleSaveConfig = (skill: Skill) => {
-    const sanitized: Record<string, string> = {};
-    for (const field of skill.configFields) {
-      sanitized[field.key] = (configDraft[field.key] ?? '').trim();
-    }
-    setSkillConfig(skill.id, sanitized);
-    dispatch({ type: 'SAVED' });
-    setTimeout(() => {
-      dispatch({ type: 'CLOSE' });
-      setTick((t) => t + 1);
-    }, 600);
+  const handleOpenInfo = (skill: Skill) => {
+    dispatch({ type: 'OPEN', id: skill.id });
   };
 
   const handleClose = () => dispatch({ type: 'CLOSE' });
-  const justSaved = savedAt > 0 && Date.now() - savedAt < 700;
 
   return (
     <div className="skills-panel">
-      {needsConfiguration.length > 0 && (
-        <div className="skills-banner">
-          <BellRing size={14} className="skills-banner__icon" />
-          <span>
-            Some skills need configuration. Click <strong>Configure</strong> to set them up.
-          </span>
-        </div>
-      )}
-
       <div className="skills-list">
         {SKILLS.map((skill) => {
           const enabled = isSkillEnabled(skill.id);
-          const configured = isSkillConfigured(skill.id);
           return (
             <article
               key={skill.id}
               className="skill-card"
               data-enabled={enabled}
-              data-configured={configured}
             >
               <div className="skill-card__head">
                 <div
@@ -152,13 +110,13 @@ const SkillsPanel: React.FC = () => {
                     <span
                       className="skill-card__badge"
                       style={{
-                        color: configured ? '#10B981' : '#F59E0B',
-                        background: configured ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.1)',
-                        border: `1px solid ${configured ? 'rgba(16,185,129,0.2)' : 'rgba(245,158,11,0.2)'}`,
+                        color: '#10B981',
+                        background: 'rgba(16,185,129,0.1)',
+                        border: '1px solid rgba(16,185,129,0.2)',
                       }}
                     >
-                      <span className={`status-dot ${configured ? 'status-dot--live' : 'status-dot--warn'}`} />
-                      {configured ? 'Ready' : 'Setup needed'}
+                      <span className="status-dot status-dot--live" />
+                      Native
                     </span>
                   </div>
                   <p className="skill-card__desc">{skill.description}</p>
@@ -173,11 +131,10 @@ const SkillsPanel: React.FC = () => {
                   <button
                     type="button"
                     className="btn-ghost-sm"
-                    onClick={() => handleOpenConfig(skill)}
-                    disabled={!skill.requiresConfig}
-                    aria-label={`Configure ${skill.name}`}
+                    onClick={() => handleOpenInfo(skill)}
+                    aria-label={`Details for ${skill.name}`}
                   >
-                    Configure
+                    Details
                   </button>
                   <button
                     type="button"
@@ -216,7 +173,7 @@ const SkillsPanel: React.FC = () => {
         <dialog
           ref={dialogRef}
           className="skill-modal"
-          aria-label={`Configure ${activeSkill.name}`}
+          aria-label={`Details for ${activeSkill.name}`}
           onClose={handleClose}
         >
           <div className="skill-modal__panel">
@@ -234,55 +191,40 @@ const SkillsPanel: React.FC = () => {
                 </div>
                 <div>
                   <h3 className="skill-modal__title">{activeSkill.name}</h3>
-                  <p className="skill-modal__sub">Set credentials and routing for this skill</p>
+                  <p className="skill-modal__sub">Native Cloudflare Worker skill</p>
                 </div>
               </div>
               <button
                 type="button"
                 className="home-icon-btn"
                 onClick={handleClose}
-                aria-label="Close configure panel"
+                aria-label="Close details panel"
               >
                 <X size={16} />
               </button>
             </header>
 
             <div className="skill-modal__body">
-              {activeSkill.configFields.length === 0 ? (
-                <p className="skill-modal__empty">This skill requires no configuration.</p>
-              ) : (
-                activeSkill.configFields.map((field) => (
-                  <div key={field.key} className="skill-modal__field">
-                    <label className="skill-modal__label" htmlFor={`skill-${activeSkill.id}-${field.key}`}>
-                      {field.label}
-                      {field.required && <span className="skill-modal__required"> *</span>}
-                    </label>
-                    <input
-                      id={`skill-${activeSkill.id}-${field.key}`}
-                      type={field.type}
-                      className="input-field"
-                      value={configDraft[field.key] ?? ''}
-                      onChange={(e) => dispatch({ type: 'PATCH_FIELD', key: field.key, value: e.target.value })}
-                      placeholder={field.placeholder}
-                      autoComplete="off"
-                      aria-label={field.label}
-                    />
-                  </div>
-                ))
-              )}
+              <p className="skill-modal__desc">{activeSkill.description}</p>
+
+              <div className="skill-modal__field">
+                <span className="skill-modal__label">Worker endpoint</span>
+                <code className="skill-modal__endpoint">{activeSkill.workerEndpoint}</code>
+              </div>
+
+              <div className="skill-modal__field">
+                <span className="skill-modal__label">Trigger keywords</span>
+                <div className="skill-card__keywords">
+                  {activeSkill.triggerKeywords.map((kw) => (
+                    <code key={kw} className="skill-card__keyword">{kw}</code>
+                  ))}
+                </div>
+              </div>
             </div>
 
             <footer className="skill-modal__foot">
-              <button type="button" className="btn-ghost-sm" onClick={handleClose}>
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="btn-solid btn-solid--accent"
-                onClick={() => handleSaveConfig(activeSkill)}
-                disabled={justSaved}
-              >
-                {justSaved ? 'Saved' : (<><Save size={12} /> Save</>)}
+              <button type="button" className="btn-solid btn-solid--accent" onClick={handleClose}>
+                Close
               </button>
             </footer>
           </div>

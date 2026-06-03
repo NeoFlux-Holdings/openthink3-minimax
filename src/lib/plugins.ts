@@ -48,14 +48,11 @@ export const PLUGINS: OpenThinkPlugin[] = [
   {
     id: 'gbrain',
     name: 'GBrain',
-    description: 'PGLite-based personal knowledge layer with synthesis, graph traversal, and gap analysis. Pairs with the gbrain-search/gbrain-think/gbrain-capture skills.',
-    version: '0.41.27.0',
+    description: 'Native Cloudflare memory layer. D1 (pages/edges/signals) + Vectorize (BGE-small embeddings) + FTS5 keyword search. Pairs with the gbrain-search/gbrain-think/gbrain-capture skills.',
+    version: '1.0.0',
     defaultEnabled: true,
-    requiresConfig: true,
-    configFields: [
-      { key: 'gbrainServerUrl', label: 'GBrain server URL', type: 'url', required: true, placeholder: 'https://gbrain.example.com' },
-      { key: 'gbrainToken', label: 'Auth token', type: 'token', required: true },
-    ],
+    requiresConfig: false,
+    configFields: [],
     hooks: [
       { type: 'chat-message-before', handler: 'capture' },
       { type: 'cron-daily', handler: 'gbrain-dream' },
@@ -65,14 +62,12 @@ export const PLUGINS: OpenThinkPlugin[] = [
   {
     id: 'gstack',
     name: 'GStack',
-    description: 'Execution stack for the agent. Schedules crons, opens PRs, manages tunnels, deploys workers.',
-    version: '0.13.0',
+    description: 'Native Cloudflare execution stack. Workers AI for inference, OrchestratorDO MCP server for tool calls, Cron Triggers for scheduled jobs, Workers for Platforms for code execution.',
+    version: '1.0.0',
     defaultEnabled: true,
     premium: false,
-    requiresConfig: true,
-    configFields: [
-      { key: 'gstackServerUrl', label: 'GStack server URL', type: 'url', required: true },
-    ],
+    requiresConfig: false,
+    configFields: [],
     hooks: [
       { type: 'tool-execute-before', handler: 'log' },
     ],
@@ -214,18 +209,34 @@ export type HookResult = {
 export async function dispatchChatMessageBefore(
   message: string,
   threadId: string,
+  apiUrl?: string,
 ): Promise<HookResult[]> {
   const results: HookResult[] = [];
   for (const plugin of listEnabledPlugins()) {
     for (const hook of plugin.hooks) {
       if (hook.type !== 'chat-message-before') continue;
       if (hook.handler === 'capture' && plugin.id === 'gbrain') {
+        // Fire the native gbrain-capture endpoint. Don't await; the
+        // chat pipeline shouldn't block on memory writes.
+        if (apiUrl) {
+          fetch(`${apiUrl.replace(/\/$/, '')}/api/skill/capture`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              threadId,
+              type: 'message',
+              title: message.slice(0, 80),
+              content: message,
+              signal: 0.5,
+            }),
+          }).catch(() => {});
+        }
         results.push({
           plugin: plugin.id,
           hook: hook.type,
           handler: hook.handler,
           captured: true,
-          detail: `gbrain capture "${message.slice(0, 60)}${message.length > 60 ? '…' : ''}" (stub, thread=${threadId})`,
+          detail: `gbrain captured "${message.slice(0, 60)}${message.length > 60 ? '…' : ''}"`,
         });
         continue;
       }
@@ -235,7 +246,7 @@ export async function dispatchChatMessageBefore(
           hook: hook.type,
           handler: hook.handler,
           captured: true,
-          detail: `${plugin.id}.${hook.handler} (stub)`,
+          detail: `${plugin.id}.${hook.handler}`,
         });
       }
     }
