@@ -1,13 +1,14 @@
 // ──────────────────────────────────────────────────────────────────────────
 // OpenThink3 Worker — Cloudflare Worker entry point.
 //
-// Chat history is now backed by PGlite (Postgres-in-WASM) instead of the
-// MEMORIES KV namespace. See ./db.ts for the full schema and bootstrap
-// notes. PGlite currently runs in-memory, so the database is per-isolate
-// and is recycled whenever the runtime tears the isolate down. The
-// /api/thread/:id/history endpoint is the migration target for v0; the
-// existing { messages: [{ role, content }] } shape is preserved so the
-// frontend doesn't need to change.
+// Chat history is currently backed by the THREAD_DO Durable Object (which
+// persists to the MEMORIES KV namespace). The PGlite-backed schema in
+// ./db.ts is a v0 design draft and is NOT yet imported here — PGlite's
+// WASM init throws "Invalid URL string" inside the V8 isolate. The
+// migration plan is to bootstrap PGlite inside `THREAD_DO` (per-thread
+// Durable Object) with an R2-backed `dataDir`, then re-enable the
+// /api/thread/:id/history and /api/memory/recall endpoints that consume
+// it. See `docs/ROADMAP.md` Phase 0B.
 // ──────────────────────────────────────────────────────────────────────────
 // TODO: when CF Cron Triggers ship (Phase 3), dispatch all 'cron-daily' hooks
 
@@ -15,7 +16,6 @@ import { Agent } from "agents";
 import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { getDb, insertMessage, listThreadMessages, recall } from "./db.js";
 
 export interface Env {
   AI: any;
@@ -544,90 +544,14 @@ export default {
       }
     }
 
-    // ── Thread history (PGLite-backed) ──────────────────────────
-    // Handled at the worker level (not inside the THREAD_DO) so the
-    // history lives in the same relational store as the rest of the
-    // gbrain pages / edges / signals schema. The THREAD_DO is still
-    // used for /chat (the streaming tool-call loop).
-    const threadHistoryMatch = url.pathname.match(/^\/api\/thread\/([^/]+)\/history\/?$/);
-    if (threadHistoryMatch) {
-      const threadId = decodeURIComponent(threadHistoryMatch[1]);
-      try {
-        if (request.method === "GET") {
-          // Warm the DB so the first request doesn't pay the full
-          // PGlite init + migration cost. We still await it before
-          // reading.
-          await getDb();
-          const messages = await listThreadMessages(threadId);
-          return jsonResp({ messages });
-        }
-        if (request.method === "POST") {
-          const body = (await request.json().catch(() => ({}))) as {
-            role?: string;
-            content?: string;
-            metadata?: Record<string, unknown>;
-            messages?: { role: string; content: string; metadata?: Record<string, unknown> }[];
-          };
-          // Accept either { role, content } for a single message or
-          // { messages: [...] } for a batch. The frontend currently
-          // doesn't POST to this endpoint, so the shape is intentionally
-          // generous to leave room for ingest-style callers later.
-          const items: { role: string; content: string; metadata?: Record<string, unknown> }[] =
-            Array.isArray(body.messages) && body.messages.length > 0
-              ? body.messages.filter(
-                  (m) => m && typeof m.role === "string" && typeof m.content === "string",
-                )
-              : body.role && body.content
-                ? [{ role: body.role, content: body.content, metadata: body.metadata }]
-                : [];
-          if (items.length === 0) {
-            return jsonResp(
-              { error: "Provide { role, content } or { messages: [{ role, content }] }" },
-              400,
-            );
-          }
-          await Promise.all(items.map((m) => insertMessage({
-            threadId,
-            role: m.role,
-            content: m.content,
-            metadata: m.metadata,
-          })));
-          return jsonResp({ ok: true, count: items.length });
-        }
-        return jsonResp({ error: `Method ${request.method} not allowed` }, 405);
-      } catch (err: any) {
-        return jsonResp({ error: err?.message ?? String(err) }, 500);
-      }
-    }
-
-    // ── Memory recall (gbrain-flavored keyword search) ──────────
-    // POST /api/memory/recall  { query, limit?, types? }
-    //   -> { results: [{ id, slug, type, title, snippet, score }], query, count }
-    // v0 baseline: stopword filter + contraction expansion + ILIKE on
-    // title/content. Future: Workers AI embeddings (bge-small) + cosine.
-    if (url.pathname === "/api/memory/recall" && request.method === "POST") {
-      try {
-        const body = (await request.json().catch(() => ({}))) as {
-          query?: string;
-          limit?: number;
-          types?: string[];
-        };
-        if (!body.query || typeof body.query !== "string") {
-          return jsonResp({ error: "query (string) is required" }, 400);
-        }
-        await getDb();
-        const results = await recall({
-          query: body.query,
-          limit: body.limit,
-          types: body.types,
-        });
-        return jsonResp({ query: body.query, count: results.length, results });
-      } catch (err: any) {
-        return jsonResp({ error: err?.message ?? String(err) }, 500);
-      }
-    }
-
     // ── Thread routing (existing) ───────────────────────────────
+    // NOTE: PGlite-backed `/api/thread/:id/history` and `/api/memory/recall`
+    // endpoints are defined in `db.ts` and will be re-enabled once PGlite
+    // runs inside a Durable Object with R2-backed `dataDir` (see
+    // `docs/ROADMAP.md` Phase 0B). In the V8 isolate, PGlite's WASM init
+    // throws "Invalid URL string" on `import.meta.url`; the fix is to
+    // bootstrap PGlite inside `THREAD_DO` so the data dir is per-isolate
+    // and persistent.
     if (url.pathname.startsWith("/api/thread/")) {
       const threadId = url.pathname.split("/")[3] || "default";
       const id = env.THREAD_DO.idFromName(threadId);

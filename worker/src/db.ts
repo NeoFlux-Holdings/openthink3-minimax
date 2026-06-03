@@ -1,18 +1,21 @@
 // worker/src/db.ts
 // ────────────────────────────────────────────────────────────────────────────
-// PGlite (Postgres-in-WASM) bootstrap for the OpenThink3 Worker.
+// PGlite (Postgres-in-WASM) schema for OpenThink3 — DESIGN DRAFT, NOT YET
+// IMPORTED BY `src/index.ts`.
 //
-// LIMITATION (v0): this is an in-memory PGlite instance. The database is
-// created when the module is first evaluated inside a Worker isolate and is
-// dropped when the isolate is recycled. State therefore does NOT persist
-// across requests served by different isolates, and may be lost on any
-// deploy. This is intentional for the v0 baseline — it lets us exercise
-// the full gbrain-shaped relational schema (pages / edges / signals) and
-// the recall endpoint before wiring a persistent backing store.
+// Why: PGlite's main entry performs WASM module initialization that
+// throws "Invalid URL string" inside the Cloudflare Workers V8 isolate.
+// The fix is to bootstrap PGlite inside a Durable Object (which has its
+// own isolate and supports an R2-backed `dataDir` for block storage), at
+// which point the helpers below can be re-exported and the /api/thread/
+// :id/history and /api/memory/recall endpoints can be re-enabled.
 //
-// Production plan: mount PGlite inside a Durable Object (with R2-backed
-// block storage via `dataDir`) so state survives across isolates and
-// deploys, or move to D1 if the access patterns are simple enough.
+// Once that's done, this file becomes the authoritative source of the
+// gbrain-shaped relational schema (pages / edges / signals) and the
+// tokenized recall endpoint. For now, chat history is persisted to the
+// MEMORIES KV namespace from inside `ThreadDO` (see `src/index.ts`).
+//
+// See `docs/ROADMAP.md` Phase 0B for the migration plan.
 // ────────────────────────────────────────────────────────────────────────────
 
 import { PGlite } from "@electric-sql/pglite";
