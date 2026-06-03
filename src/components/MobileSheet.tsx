@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useEffectEvent, type ReactNode, useRef } from 'react';
 import { X } from 'lucide-react';
 
 interface MobileSheetProps {
@@ -13,10 +13,12 @@ interface MobileSheetProps {
 }
 
 export function MobileSheet({ open, onClose, title, children, icon, accentColor }: MobileSheetProps) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const onCloseEvent = useEffectEvent(onClose);
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') onCloseEvent();
     };
     window.addEventListener('keydown', onKey);
 
@@ -27,49 +29,29 @@ export function MobileSheet({ open, onClose, title, children, icon, accentColor 
       window.removeEventListener('keydown', onKey);
       document.body.style.overflow = prevOverflow;
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 
+  const onBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.target === e.currentTarget) onClose();
+  };
+
   return (
     <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={title}
-      onClick={onClose}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 1000,
-        background: 'rgba(0, 0, 0, 0.55)',
-        backdropFilter: 'blur(8px)',
-        WebkitBackdropFilter: 'blur(8px)',
-        display: 'flex',
-        alignItems: 'flex-end',
-        justifyContent: 'center',
-        animation: 'sheet-fade-in 0.18s ease-out',
-        paddingTop: 'max(48px, env(safe-area-inset-top, 0px))',
-        paddingBottom: 'env(safe-area-inset-bottom, 0px)',
-        paddingLeft: 'env(safe-area-inset-left, 0px)',
-        paddingRight: 'env(safe-area-inset-right, 0px)',
-      }}
+      onClick={onBackdropClick}
+      onKeyDown={(e) => { if (e.key === 'Escape') onClose(); }}
+      role="presentation"
+      className="sheet-backdrop"
+      style={{ zIndex: 50, paddingTop: 'max(48px, env(safe-area-inset-top, 0px))', paddingLeft: 'env(safe-area-inset-left, 0px)', paddingRight: 'env(safe-area-inset-right, 0px)' }}
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          background: 'var(--bg-primary)',
-          width: 'min(560px, 100%)',
-          maxHeight: 'calc(100dvh - 64px)',
-          height: 'min(90dvh, 760px)',
-          display: 'flex',
-          flexDirection: 'column',
-          borderRadius: '20px 20px 0 0',
-          boxShadow: '0 -8px 32px rgba(0, 0, 0, 0.6)',
-          border: '1px solid var(--border-subtle)',
-          borderBottom: 'none',
-          animation: 'sheet-slide-up 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
-          overflow: 'hidden',
-        }}
+      <dialog
+        ref={ref}
+        open
+        aria-label={title}
+        aria-modal="true"
+        className="sheet-panel"
+        style={{ maxHeight: 'calc(100dvh - 64px)', height: 'min(90dvh, 760px)' }}
       >
         <div
           style={{
@@ -149,7 +131,7 @@ export function MobileSheet({ open, onClose, title, children, icon, accentColor 
         >
           {children}
         </div>
-      </div>
+      </dialog>
     </div>
   );
 }

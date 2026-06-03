@@ -1,130 +1,132 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useEffectEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Check, CreditCard, Key, Server, Globe, ArrowRight, Loader2, Play } from 'lucide-react';
 
+const DEFAULT_DOMAINS = [
+  "circlejerk.app",
+  "cyphzec.com",
+  "jiggytom.com",
+  "neofluxholdings.com",
+  "open-think.app",
+  "ordchard.com",
+  "pourhub.app",
+  "pouroverhub.com",
+  "rpow2stats.com",
+  "vaults.care",
+  "whatismyiq.ai"
+];
+
+const STORAGE_KEYS = {
+  "step": "openthink_deploy_step",
+  "maxStep": "openthink_deploy_max_step",
+  "agentName": "openthink_deploy_agent_name",
+  "baseDomain": "openthink_deploy_base_domain",
+  "subdomain": "openthink_deploy_subdomain",
+  "useCustom": "openthink_deploy_use_custom",
+  "customInput": "openthink_deploy_custom_input",
+  "customDomain": "openthink_custom_domain"
+} as const;
+
 const DeployFlow = () => {
-  const [step, setStep] = useState(() => {
-    return parseInt(localStorage.getItem('openthink_deploy_step') || '1');
+  const [step, setStepRaw] = useState(() => {
+    return parseInt(localStorage.getItem(STORAGE_KEYS.step) || '1');
   });
-  const [agentName, setAgentName] = useState(() => {
-    return localStorage.getItem('openthink_deploy_agent_name') || 'Agent-Orange-0';
+  const [agentName, setAgentNameRaw] = useState(() => {
+    return localStorage.getItem(STORAGE_KEYS.agentName) || 'Agent-Orange-0';
   });
   const [domain, setDomain] = useState(() => {
-    return localStorage.getItem('openthink_custom_domain') || 'openthink.ai';
+    return localStorage.getItem(STORAGE_KEYS.customDomain) || 'openthink.ai';
   });
-  
-  const [domains, setDomains] = useState<string[]>([
-    "circlejerk.app",
-    "cyphzec.com",
-    "jiggytom.com",
-    "neofluxholdings.com",
-    "open-think.app",
-    "ordchard.com",
-    "pourhub.app",
-    "pouroverhub.com",
-    "rpow2stats.com",
-    "vaults.care",
-    "whatismyiq.ai"
-  ]);
 
-  const [selectedBaseDomain, setSelectedBaseDomain] = useState(() => {
-    return localStorage.getItem('openthink_deploy_base_domain') || 'jiggytom.com';
+  const [domains, setDomains] = useState<string[]>(DEFAULT_DOMAINS);
+
+  const [selectedBaseDomain, setSelectedBaseDomainRaw] = useState(() => {
+    return localStorage.getItem(STORAGE_KEYS.baseDomain) || 'jiggytom.com';
   });
-  const [subdomain, setSubdomain] = useState(() => {
-    return localStorage.getItem('openthink_deploy_subdomain') || 'ao-0';
+  const [subdomain, setSubdomainRaw] = useState(() => {
+    return localStorage.getItem(STORAGE_KEYS.subdomain) || 'ao-0';
   });
   const [loadingDomains, setLoadingDomains] = useState(false);
   const [domainsSource, setDomainsSource] = useState<'fallback' | 'cached' | 'live'>('fallback');
   const [maxStepReached, setMaxStepReached] = useState(() => {
-    return parseInt(localStorage.getItem('openthink_deploy_max_step') || '1');
+    return parseInt(localStorage.getItem(STORAGE_KEYS.maxStep) || '1');
   });
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [useCustomDomain, setUseCustomDomain] = useState(() => {
-    return localStorage.getItem('openthink_deploy_use_custom') === 'true';
+  const [useCustomDomain, setUseCustomDomainRaw] = useState(() => {
+    return localStorage.getItem(STORAGE_KEYS.useCustom) === 'true';
   });
-  const [customDomainInput, setCustomDomainInput] = useState(() => {
-    return localStorage.getItem('openthink_deploy_custom_input') || 'ao-0.openthink.app';
+  const [customDomainInput, setCustomDomainInputRaw] = useState(() => {
+    return localStorage.getItem(STORAGE_KEYS.customInput) || 'ao-0.openthink.app';
   });
   const [bypassAccess, setBypassAccess] = useState(false);
   const [isDeploying, setIsDeploying] = useState(false);
   const [progressLog, setProgressLog] = useState<string[]>([]);
-  
+
   const navigate = useNavigate();
 
-  // Keep track of max step reached and persist steps
-  useEffect(() => {
-    localStorage.setItem('openthink_deploy_step', step.toString());
-    if (step > maxStepReached) {
-      setMaxStepReached(step);
-      localStorage.setItem('openthink_deploy_max_step', step.toString());
+  // Persist + advance step in one place
+  const setStep = (next: number | ((prev: number) => number)) => {
+    setStepRaw(prev => {
+      const value = typeof next === 'function' ? next(prev) : next;
+      localStorage.setItem(STORAGE_KEYS.step, value.toString());
+      if (value > maxStepReached) {
+        setMaxStepReached(value);
+        localStorage.setItem(STORAGE_KEYS.maxStep, value.toString());
+      }
+      return value;
+    });
+  };
+  const setAgentName = (v: string) => { setAgentNameRaw(v); localStorage.setItem(STORAGE_KEYS.agentName, v); };
+  const setSelectedBaseDomain = (v: string) => { setSelectedBaseDomainRaw(v); localStorage.setItem(STORAGE_KEYS.baseDomain, v); };
+  const setSubdomain = (v: string) => { setSubdomainRaw(v); localStorage.setItem(STORAGE_KEYS.subdomain, v); };
+  const setUseCustomDomain = (v: boolean) => { setUseCustomDomainRaw(v); localStorage.setItem(STORAGE_KEYS.useCustom, v.toString()); };
+  const setCustomDomainInput = (v: string) => { setCustomDomainInputRaw(v); localStorage.setItem(STORAGE_KEYS.customInput, v); };
+
+  const loadDomains = useEffectEvent(async () => {
+    setLoadingDomains(true);
+    try {
+      const res = await fetch('/api/cloudflare-zones');
+      const data = await res.json();
+      if (data.domains && Array.isArray(data.domains) && data.domains.length > 0) {
+        setDomains(data.domains);
+        setDomainsSource('live');
+
+        const savedDomain = localStorage.getItem(STORAGE_KEYS.baseDomain);
+        if (savedDomain && data.domains.includes(savedDomain)) {
+          setSelectedBaseDomainRaw(savedDomain);
+        } else {
+          setSelectedBaseDomainRaw(data.domains[0]);
+        }
+        setLoadingDomains(false);
+        return;
+      }
+    } catch {
+      // Fall through to cached build JSON
     }
-  }, [step, maxStepReached]);
 
-  // Persist form inputs on change
-  useEffect(() => {
-    localStorage.setItem('openthink_deploy_agent_name', agentName);
-  }, [agentName]);
-
-  useEffect(() => {
-    localStorage.setItem('openthink_deploy_base_domain', selectedBaseDomain);
-  }, [selectedBaseDomain]);
-
-  useEffect(() => {
-    localStorage.setItem('openthink_deploy_subdomain', subdomain);
-  }, [subdomain]);
-
-  useEffect(() => {
-    localStorage.setItem('openthink_deploy_use_custom', useCustomDomain.toString());
-  }, [useCustomDomain]);
-
-  useEffect(() => {
-    localStorage.setItem('openthink_deploy_custom_input', customDomainInput);
-  }, [customDomainInput]);
-
-  useEffect(() => {
-    const fetchDomains = async () => {
-      setLoadingDomains(true);
-      try {
-        const res = await fetch('/api/cloudflare-zones');
-        const data = await res.json();
-        if (data.domains && Array.isArray(data.domains) && data.domains.length > 0) {
-          setDomains(data.domains);
-          setDomainsSource('live');
-          
-          const savedDomain = localStorage.getItem('openthink_deploy_base_domain');
-          if (savedDomain && data.domains.includes(savedDomain)) {
-            setSelectedBaseDomain(savedDomain);
-          } else {
-            setSelectedBaseDomain(data.domains[0]);
-          }
-          setLoadingDomains(false);
-          return;
+    try {
+      const res = await fetch('/detected-domains.json');
+      const data = await res.json();
+      if (Array.isArray(data) && data.length > 0) {
+        setDomains(data);
+        setDomainsSource('cached');
+        const savedDomain = localStorage.getItem(STORAGE_KEYS.baseDomain);
+        if (savedDomain && data.includes(savedDomain)) {
+          setSelectedBaseDomainRaw(savedDomain);
+        } else {
+          setSelectedBaseDomainRaw(data[0]);
         }
-      } catch (e) {
-        // Fall back to cached build JSON next
       }
+    } catch {
+      // Fallback to hardcoded list
+    }
+    setLoadingDomains(false);
+  });
 
-      try {
-        const res = await fetch('/detected-domains.json');
-        const data = await res.json();
-        if (Array.isArray(data) && data.length > 0) {
-          setDomains(data);
-          setDomainsSource('cached');
-          const savedDomain = localStorage.getItem('openthink_deploy_base_domain');
-          if (savedDomain && data.includes(savedDomain)) {
-            setSelectedBaseDomain(savedDomain);
-          } else {
-            setSelectedBaseDomain(data[0]);
-          }
-        }
-      } catch (e) {
-        // Fallback to hardcoded list
-      }
-      setLoadingDomains(false);
-    };
-
-    fetchDomains();
+  useEffect(() => {
+    void loadDomains();
   }, []);
+
 
   const handleDeploy = () => {
     setIsDeploying(true);
@@ -140,7 +142,7 @@ const DeployFlow = () => {
         setProgressLog(p => [...p, 'Deployment successful! Linked live edge configurations...']);
         localStorage.setItem('openthink_api_url', 'https://openthink3-worker.thomas-zarebczan.workers.dev');
         if (domain) {
-          localStorage.setItem('openthink_custom_domain', domain);
+          localStorage.setItem(STORAGE_KEYS.customDomain, domain);
         }
         setTimeout(() => navigate('/app'), 1500);
       }, 3000);
@@ -175,7 +177,7 @@ const DeployFlow = () => {
           setProgressLog(p => [...p, '✨ Infrastructure fully deployed! Syncing custom domain binding...']);
           localStorage.setItem('openthink_api_url', 'https://openthink3-worker.thomas-zarebczan.workers.dev');
           if (domain) {
-            localStorage.setItem('openthink_custom_domain', domain);
+            localStorage.setItem(STORAGE_KEYS.customDomain, domain);
           }
           eventSource.close();
           setTimeout(() => navigate('/app'), 2000);
@@ -210,21 +212,27 @@ const DeployFlow = () => {
           {[1, 2, 3, 4].map(s => {
             const isClickable = s <= maxStepReached;
             return (
-              <div 
-                key={s} 
+              <button
+                type="button"
+                key={s}
+                disabled={!isClickable}
+                aria-disabled={!isClickable}
+                aria-label={isClickable ? `Jump to Step ${s}` : `Complete previous steps to unlock Step ${s}`}
                 onClick={() => isClickable && setStep(s)}
-                style={{ 
-                  width: '32px', 
-                  height: '32px', 
-                  borderRadius: '50%', 
-                  background: step >= s ? 'var(--accent-primary)' : 'var(--bg-elevated)', 
-                  border: `2px solid ${step >= s ? 'var(--accent-primary)' : 'var(--border-subtle)'}`, 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  justifyContent: 'center', 
-                  color: step >= s ? 'white' : 'var(--text-tertiary)', 
-                  zIndex: 1, 
-                  fontWeight: 600, 
+                style={{
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '50%',
+                  background: step >= s ? 'var(--accent-primary)' : 'var(--bg-elevated)',
+                  border: `2px solid ${step >= s ? 'var(--accent-primary)' : 'var(--border-subtle)'}`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: step >= s ? 'white' : 'var(--text-tertiary)',
+                  zIndex: 1,
+                  fontWeight: 600,
+                  fontSize: '0.875rem',
+                  padding: 0,
                   transition: 'background ease 0.3s, color ease 0.3s, border-color ease 0.3s, transform ease 0.3s, opacity ease 0.3s, box-shadow ease 0.3s',
                   cursor: isClickable ? 'pointer' : 'not-allowed',
                   boxShadow: step === s ? '0 0 12px var(--accent-primary)' : 'none'
@@ -232,7 +240,7 @@ const DeployFlow = () => {
                 title={isClickable ? `Jump to Step ${s}` : `Complete previous steps to unlock Step ${s}`}
               >
                 {step > s ? <Check size={16} /> : s}
-              </div>
+              </button>
             );
           })}
         </div>
@@ -249,7 +257,7 @@ const DeployFlow = () => {
                 value={agentName}
                 onChange={e => setAgentName(e.target.value)}
                 style={{ marginBottom: '24px', fontSize: '1.25rem', padding: '16px' }}
-              />
+               aria-label="Agent name" />
               <button type="button" className="btn btn-primary" style={{ width: '100%', padding: '16px', fontSize: '1.125rem' }} onClick={() => setStep(2)}>
                 Continue <ArrowRight size={18} />
               </button>
@@ -306,7 +314,7 @@ const DeployFlow = () => {
                   </label>
                   {loadingDomains ? (
                     <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <Loader2 size={10} className="spin" /> Syncing...
+                      <Loader2 size={10} className="spin" /> Syncing…
                     </span>
                   ) : (
                     <span style={{ 
@@ -356,7 +364,7 @@ const DeployFlow = () => {
                       </option>
                     ))}
                     <option value="custom" style={{ background: 'var(--bg-primary)', color: 'var(--text-secondary)', fontWeight: 600 }}>
-                      Custom / External Domain...
+                      Custom / External Domain…
                     </option>
                   </select>
                 </div>
@@ -402,7 +410,7 @@ const DeployFlow = () => {
               )}
 
               {/* Real-time Secure Binding Preview Card */}
-              <div className="glass-panel" style={{ padding: '16px', borderRadius: '8px', background: 'rgba(36,36,36,0.2)', marginBottom: '24px', borderLeft: '3px solid #10B981' }}>
+              <div className="glass-panel" style={{ padding: '16px', borderRadius: '8px', background: 'rgba(36,36,36,0.2)', marginBottom: '24px', boxShadow: 'inset 3px 0 0 0 #10B981' }}>
                 <span style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: '#10B981', fontWeight: 700, display: 'block', marginBottom: '4px' }}>
                   Active secure tunnel bind mapping
                 </span>
@@ -432,7 +440,7 @@ const DeployFlow = () => {
                         checked={bypassAccess}
                         onChange={e => setBypassAccess(e.target.checked)}
                         style={{ width: '16px', height: '16px', cursor: 'pointer' }}
-                      />
+                       aria-label="Cloudflare API token" />
                     </div>
                     
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -443,7 +451,7 @@ const DeployFlow = () => {
                         placeholder="Automatic detection via wrangler"
                         style={{ fontSize: '0.75rem', padding: '8px 10px', background: 'rgba(0,0,0,0.1)' }}
                         disabled
-                      />
+                       aria-label="Wrangler auth code" />
                     </div>
                   </div>
                 )}

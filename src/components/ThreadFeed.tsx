@@ -1,7 +1,17 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useEffectEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { marked } from 'marked';
+import ReactMarkdown from 'react-markdown';
 import { Menu, MoreHorizontal, Paperclip, Send, ChevronRight, Globe, CheckCircle2 } from 'lucide-react';
+
+const getApiUrl = () => {
+  const custom = localStorage.getItem('openthink_api_url');
+  if (custom) return custom.endsWith('/') ? custom.slice(0, -1) : custom;
+
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    return 'http://127.0.0.1:8787';
+  }
+  return 'https://openthink3-worker.thomas-zarebczan.workers.dev';
+};
 
 interface ThreadFeedProps {
   threadId: string;
@@ -24,25 +34,10 @@ const ThreadFeed: React.FC<ThreadFeedProps> = ({ threadId, initialPrompt, thread
   const [messages, setMessages] = useState<MessageData[]>([]);
   const [apiError, setApiError] = useState<string | null>(null);
   const navigate = useNavigate();
-  
-  const getApiUrl = () => {
-    const custom = localStorage.getItem('openthink_api_url');
-    if (custom) return custom.endsWith('/') ? custom.slice(0, -1) : custom;
-    
-    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-      return 'http://127.0.0.1:8787';
-    }
-    return 'https://openthink3-worker.thomas-zarebczan.workers.dev';
-  };
 
   const [input, setInput] = useState(() => {
     return localStorage.getItem(`openthink_draft_input_${threadId}`) || '';
   });
-
-  useEffect(() => {
-    const savedDraft = localStorage.getItem(`openthink_draft_input_${threadId}`);
-    setInput(savedDraft || '');
-  }, [threadId]);
 
   const handleInputChange = (value: string) => {
     setInput(value);
@@ -50,9 +45,6 @@ const ThreadFeed: React.FC<ThreadFeedProps> = ({ threadId, initialPrompt, thread
   };
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  
-  // Track if we've sent the initial prompt to avoid sending it multiple times on remounts
-  const initialPromptSent = useRef(false);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -62,45 +54,47 @@ const ThreadFeed: React.FC<ThreadFeedProps> = ({ threadId, initialPrompt, thread
     scrollToBottom();
   }, [messages]);
 
-  useEffect(() => {
-    const loadHistory = async () => {
-      // Don't load history if we are currently starting a new thread via initialPrompt
-      if (initialPrompt) return;
-      
-      try {
-        setIsLoading(true);
-        setApiError(null);
-        const response = await fetch(`${getApiUrl()}/api/thread/${threadId}/history`);
-        if (response.ok) {
-          const data = await response.json();
-          if (data.messages && Array.isArray(data.messages)) {
-            const mapped = data.messages.map((m: any, index: number) => ({
-              id: `history-${index}-${Date.now()}`,
-              isUser: m.role === 'user',
-              content: m.content
-            }));
-            setMessages(mapped);
-          }
-        } else {
-          setApiError(`HTTP ${response.status} ${response.statusText}`);
+  const loadHistory = useEffectEvent(async () => {
+    if (initialPrompt) return;
+    try {
+      setIsLoading(true);
+      setApiError(null);
+      const response = await fetch(`${getApiUrl()}/api/thread/${threadId}/history`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.messages && Array.isArray(data.messages)) {
+          const mapped = data.messages.map((m: any, index: number) => ({
+            id: `history-${index}-${Date.now()}`,
+            isUser: m.role === 'user',
+            content: m.content
+          }));
+          setMessages(mapped);
         }
-      } catch (err) {
-        console.error("Failed to load thread history:", err);
-        setApiError(err instanceof Error ? err.message : String(err));
-      } finally {
-        setIsLoading(false);
+      } else {
+        setApiError(`HTTP ${response.status} ${response.statusText}`);
       }
-    };
-
-    loadHistory();
-  }, [threadId, initialPrompt]);
+    } catch (err) {
+      console.error("Failed to load thread history:", err);
+      setApiError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsLoading(false);
+    }
+  });
 
   useEffect(() => {
-    if (initialPrompt && !initialPromptSent.current && messages.length === 0) {
-      initialPromptSent.current = true;
-      handleSend(initialPrompt);
-    }
-  }, [initialPrompt, messages.length]);
+    loadHistory();
+  }, [threadId]);
+
+  const initialPromptSent = useRef(false);
+  const onInitialPrompt = useEffectEvent((p: string) => {
+    if (initialPromptSent.current) return;
+    initialPromptSent.current = true;
+    void handleSend(p);
+  });
+
+  useEffect(() => {
+    if (initialPrompt) onInitialPrompt(initialPrompt);
+  }, [initialPrompt]);
 
   const handleSend = async (overrideInput?: string) => {
     const userMsg = overrideInput || input;
@@ -137,36 +131,30 @@ const ThreadFeed: React.FC<ThreadFeedProps> = ({ threadId, initialPrompt, thread
         if (value) {
           const chunk = decoder.decode(value, { stream: true });
           buffer += chunk;
-          
-          let boundary = buffer.indexOf("\n");
-          while (boundary !== -1) {
-            const line = buffer.slice(0, boundary).trim();
-            buffer = buffer.slice(boundary + 1);
-            
-            if (line.startsWith('data: ')) {
-              if (line.trim() === 'data: [DONE]') {
-                // Done
-              } else {
-                try {
-                  const data = JSON.parse(line.slice(6));
-                  
-                  if (data.status) {
-                    setMessages(prev => prev.map(m => 
-                      m.id === agentMsgId ? { ...m, status: data.status } : m
-                    ));
-                  }
-                  
-                  if (data.response) {
-                    setMessages(prev => prev.map(m => 
-                      m.id === agentMsgId ? { ...m, content: m.content + data.response, status: undefined } : m
-                    ));
-                  }
-                } catch (e) {
-                  // Ignore JSON parse errors on incomplete lines
-                }
+
+          const parts = buffer.split("\n");
+          buffer = parts.pop() ?? "";
+          for (const rawLine of parts) {
+            const line = rawLine.trim();
+            if (!line.startsWith('data: ')) continue;
+            if (line === 'data: [DONE]') continue;
+            try {
+              const data = JSON.parse(line.slice(6));
+
+              if (data.status) {
+                setMessages(prev => prev.map(m =>
+                  m.id === agentMsgId ? { ...m, status: data.status } : m
+                ));
               }
+
+              if (data.response) {
+                setMessages(prev => prev.map(m =>
+                  m.id === agentMsgId ? { ...m, content: m.content + data.response, status: undefined } : m
+                ));
+              }
+            } catch (e) {
+              // Ignore JSON parse errors on incomplete lines
             }
-            boundary = buffer.indexOf("\n");
           }
         }
       }
@@ -244,7 +232,7 @@ const ThreadFeed: React.FC<ThreadFeedProps> = ({ threadId, initialPrompt, thread
       }}>
         
         {apiError && (
-          <div className="glass-panel fade-in" style={{ padding: '24px', borderRadius: '12px', borderLeft: '4px solid var(--accent-secondary)', background: 'rgba(239, 68, 68, 0.04)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div className="glass-panel fade-in" style={{ padding: '24px', borderRadius: '12px', boxShadow: 'inset 4px 0 0 0 var(--accent-secondary)', background: 'rgba(239, 68, 68, 0.04)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <div>
               <h3 style={{ fontSize: '1.15rem', color: 'var(--text-primary)', margin: '0 0 8px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 ⚠️ Cloudflare Agent Offline
@@ -305,7 +293,7 @@ const ThreadFeed: React.FC<ThreadFeedProps> = ({ threadId, initialPrompt, thread
                   <ChevronRight size={16} /> Reasoned
                 </summary>
                 <div style={{ padding: '8px 0 0 24px', color: 'var(--text-tertiary)' }}>
-                  {msg.reasoning.map((r, i) => <div key={`${msg.id}-r-${i}`}>{i+1}. {r}</div>)}
+                  {msg.reasoning.map((r) => <div key={r}>{r}</div>)}
                 </div>
               </details>
             )}
@@ -339,6 +327,7 @@ const ThreadFeed: React.FC<ThreadFeedProps> = ({ threadId, initialPrompt, thread
           <textarea
             className="input-field"
             placeholder="Reply to agent..."
+            aria-label="Reply to agent"
             value={input}
             onChange={e => handleInputChange(e.target.value)}
             onKeyDown={e => {
@@ -395,8 +384,9 @@ const Message = ({ isUser, content, children, status }: { isUser: boolean, conte
           overflowWrap: 'anywhere',
           minWidth: 0,
         }}
-        dangerouslySetInnerHTML={{ __html: marked.parse(content) as string }}
-      />
+      >
+        {isUser ? content : <ReactMarkdown>{content}</ReactMarkdown>}
+      </div>
       {children}
     </div>
   </div>

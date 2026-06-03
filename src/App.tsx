@@ -42,17 +42,22 @@ const AppView = () => {
   const [mobileTab, setMobileTab] = useState<MobileTab>('chat');
   const [mobileSummariesOpen, setMobileSummariesOpen] = useState(false);
 
-  useEffect(() => {
-    const saved = localStorage.getItem('openthink_threads');
-    if (saved) {
-      try { setRecentThreads(JSON.parse(saved)); } catch { /* noop */ }
+  const [recentThreads, setRecentThreads] = useState<ThreadInfo[]>(() => {
+    try {
+      const saved = localStorage.getItem('openthink_threads');
+      if (!saved) return [];
+      const parsed = JSON.parse(saved);
+      if (parsed && typeof parsed === 'object' && parsed.__v === 1 && Array.isArray(parsed.data)) {
+        return parsed.data;
+      }
+      return [];
+    } catch {
+      return [];
     }
-  }, []);
-
-  const [recentThreads, setRecentThreads] = useState<ThreadInfo[]>([]);
+  });
 
   useEffect(() => {
-    localStorage.setItem('openthink_threads', JSON.stringify(recentThreads));
+    localStorage.setItem('openthink_threads', JSON.stringify({ __v: 1, data: recentThreads }));
   }, [recentThreads]);
 
   useEffect(() => {

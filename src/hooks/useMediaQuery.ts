@@ -36,7 +36,6 @@ export function useBreakpoint(): Breakpoint {
         return next;
       });
     };
-    update();
     const mqlMobile = window.matchMedia(QUERIES.mobile);
     const mqlTablet = window.matchMedia(QUERIES.tablet);
     mqlMobile.addEventListener('change', update);
@@ -80,7 +79,6 @@ export function useIsTouchDevice(): boolean {
     const update = () => {
       setIsTouch('ontouchstart' in window || navigator.maxTouchPoints > 0);
     };
-    update();
     window.addEventListener('touchstart', update, { once: true, passive: true });
     return () => window.removeEventListener('touchstart', update);
   }, []);

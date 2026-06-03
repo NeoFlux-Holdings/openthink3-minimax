@@ -13,7 +13,7 @@ const MarketingView = () => {
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         borderBottom: '1px solid var(--border-subtle)',
         background: 'rgba(10, 10, 10, 0.8)',
-        backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
+        backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
         position: 'sticky', top: 0, zIndex: 50, gap: 12, flexWrap: 'wrap',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -42,7 +42,7 @@ const MarketingView = () => {
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: 'rgba(59, 130, 246, 0.1)', color: '#3B82F6', padding: '6px 16px', borderRadius: 'var(--radius-full)', fontSize: '0.875rem', fontWeight: 600, marginBottom: '20px' }}>
             <Zap size={14} fill="currentColor" /> Powered by Cloudflare Workers AI
           </div>
-          <h1 className="marketing-h1" style={{ lineHeight: 1.1, marginBottom: '20px', background: 'linear-gradient(to right, #fff, #A1A1AA)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+          <h1 className="marketing-h1" style={{ lineHeight: 1.1, marginBottom: '20px', color: 'var(--text-primary)' }}>
             Your personal AI agent,<br/>running on the edge.
           </h1>
           <p className="marketing-p" style={{ color: 'var(--text-secondary)', lineHeight: 1.6, maxWidth: '600px', margin: '0 auto 32px' }}>

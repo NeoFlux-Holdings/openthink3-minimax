@@ -30,7 +30,10 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()
       .then((keys) => Promise.all(
-        keys.filter((k) => !k.startsWith(CACHE_VERSION)).map((k) => caches.delete(k))
+        keys.reduce((deletes, k) => {
+          if (!k.startsWith(CACHE_VERSION)) deletes.push(caches.delete(k));
+          return deletes;
+        }, [])
       ))
       .then(() => self.clients.claim())
   );

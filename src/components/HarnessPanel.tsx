@@ -10,6 +10,15 @@ interface HarnessPanelProps {
   onModelChange?: (model: string) => void;
 }
 
+type Tab = 'harness' | 'brain' | 'evals' | 'plugins';
+
+const HARNESS_TABS: { id: Tab; label: string; icon: React.ReactNode; color?: string }[] = [
+  { id: 'harness', label: 'Harness', icon: React.createElement(Cpu, { size: 13 }) },
+  { id: 'brain', label: 'Brain', icon: React.createElement(Brain, { size: 13 }), color: '#8B5CF6' },
+  { id: 'evals', label: 'Evals', icon: React.createElement(BarChart2, { size: 13 }), color: '#10B981' },
+  { id: 'plugins', label: 'Plugins', icon: React.createElement(Puzzle, { size: 13 }), color: '#F59E0B' },
+];
+
 const premiumModels = [
   {
     id: '@cf/meta/llama-3.1-8b-instruct',
@@ -44,8 +53,6 @@ const premiumModels = [
     gradient: 'linear-gradient(135deg, rgba(236, 72, 153, 0.15), rgba(249, 115, 22, 0.15))'
   }
 ];
-
-type Tab = 'harness' | 'brain' | 'evals' | 'plugins';
 
 const HarnessPanel: React.FC<HarnessPanelProps> = ({ isPoppedOut = false, selectedModel: propsModel, onModelChange }) => {
   const [activeTab, setActiveTab] = useState<Tab>('harness');
@@ -93,12 +100,7 @@ const HarnessPanel: React.FC<HarnessPanelProps> = ({ isPoppedOut = false, select
     return () => clearInterval(interval);
   }, []);
 
-  const tabs: { id: Tab; label: string; icon: React.ReactNode; color?: string }[] = [
-    { id: 'harness', label: 'Harness', icon: <Cpu size={13} /> },
-    { id: 'brain', label: 'Brain', icon: <Brain size={13} />, color: '#8B5CF6' },
-    { id: 'evals', label: 'Evals', icon: <BarChart2 size={13} />, color: '#10B981' },
-    { id: 'plugins', label: 'Plugins', icon: <Puzzle size={13} />, color: '#F59E0B' },
-  ];
+  const tabs = HARNESS_TABS;
 
   return (
     <div style={{
@@ -177,9 +179,23 @@ const HarnessPanel: React.FC<HarnessPanelProps> = ({ isPoppedOut = false, select
           {premiumModels.map(model => {
             const isSelected = activeModel === model.id;
             return (
-              <div
+              <button
+                type="button"
                 key={model.id}
+                aria-pressed={isSelected}
                 onClick={() => handleModelChange(model.id)}
+                onFocus={e => {
+                  if (!isSelected) {
+                    e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+                    e.currentTarget.style.transform = 'translateY(-1px)';
+                  }
+                }}
+                onBlur={e => {
+                  if (!isSelected) {
+                    e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.06)';
+                    e.currentTarget.style.transform = 'translateY(0)';
+                  }
+                }}
                 style={{
                   padding: '14px',
                   borderRadius: '8px',
@@ -192,7 +208,10 @@ const HarnessPanel: React.FC<HarnessPanelProps> = ({ isPoppedOut = false, select
                   flexDirection: 'column',
                   gap: '6px',
                   position: 'relative',
-                  overflow: 'hidden'
+                  overflow: 'hidden',
+                  textAlign: 'left',
+                  color: 'inherit',
+                  font: 'inherit'
                 }}
                 onMouseOver={e => {
                   if (!isSelected) {
@@ -248,16 +267,16 @@ const HarnessPanel: React.FC<HarnessPanelProps> = ({ isPoppedOut = false, select
                 <div style={{ zIndex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.04)' }}>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>Ping Latency</span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <div style={{ 
-                      width: '6px', height: '6px', borderRadius: '50%', 
-                      background: '#10B981', 
+                    <div style={{
+                      width: '6px', height: '6px', borderRadius: '50%',
+                      background: '#10B981',
                       boxShadow: '0 0 6px #10B981',
-                      animation: 'pulse 2s infinite'
+                      animation: 'pulse 0.9s infinite'
                     }} />
                     <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>{model.latency}</span>
                   </div>
                 </div>
-              </div>
+              </button>
             );
           })}
         </div>
@@ -282,7 +301,7 @@ const HarnessPanel: React.FC<HarnessPanelProps> = ({ isPoppedOut = false, select
               <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{latency.toFixed(0)} ms</span>
             </div>
             <div style={{ width: '100%', height: '6px', background: 'var(--bg-tertiary)', borderRadius: '3px', overflow: 'hidden' }}>
-              <div style={{ width: `${(latency / 300) * 100}%`, height: '100%', background: 'linear-gradient(to right, var(--accent-secondary), var(--accent-primary))', borderRadius: '3px', transition: 'width 0.5s ease-out' }} />
+              <div style={{ width: '100%', height: '100%', background: 'linear-gradient(to right, var(--accent-secondary), var(--accent-primary))', borderRadius: '3px', transform: `scaleX(${Math.min(latency / 300, 1)})`, transformOrigin: 'left center', transition: 'transform 0.5s ease-out' }} />
             </div>
           </div>
 
@@ -293,7 +312,7 @@ const HarnessPanel: React.FC<HarnessPanelProps> = ({ isPoppedOut = false, select
               <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{speed.toFixed(1)} tok/sec</span>
             </div>
             <div style={{ width: '100%', height: '6px', background: 'var(--bg-tertiary)', borderRadius: '3px', overflow: 'hidden' }}>
-              <div style={{ width: `${(speed / 60) * 100}%`, height: '100%', background: 'linear-gradient(to right, var(--accent-primary), var(--accent-tertiary))', borderRadius: '3px', transition: 'width 0.5s ease-out' }} />
+              <div style={{ width: '100%', height: '100%', background: 'linear-gradient(to right, var(--accent-primary), var(--accent-tertiary))', borderRadius: '3px', transform: `scaleX(${Math.min(speed / 60, 1)})`, transformOrigin: 'left center', transition: 'transform 0.5s ease-out' }} />
             </div>
           </div>
 

@@ -27,6 +27,16 @@ const getApiUrl = () => {
   return 'https://openthink3-worker.thomas-zarebczan.workers.dev';
 };
 
+function getStatusBadge(status: Plugin['status'], enabled: boolean) {
+  if (!enabled) return { label: 'Disabled', color: 'var(--text-tertiary)', bg: 'rgba(255,255,255,0.03)' };
+  return {
+    active: { label: '● Active', color: '#10B981', bg: 'rgba(16,185,129,0.08)' },
+    config_needed: { label: '⚠ Setup needed', color: '#F59E0B', bg: 'rgba(245,158,11,0.08)' },
+    optional: { label: '○ Optional', color: '#3B82F6', bg: 'rgba(59,130,246,0.08)' },
+    installing: { label: '⏳ Installing', color: '#8B5CF6', bg: 'rgba(139,92,246,0.08)' },
+  }[status];
+}
+
 const BUILTIN_PLUGINS: Omit<Plugin, 'enabled'>[] = [
   {
     id: 'gbrain-memory',
@@ -157,15 +167,7 @@ const PluginPanel: React.FC = () => {
     setAdding(false);
   };
 
-  const statusBadge = (status: Plugin['status'], enabled: boolean) => {
-    if (!enabled) return { label: 'Disabled', color: 'var(--text-tertiary)', bg: 'rgba(255,255,255,0.03)' };
-    return {
-      active: { label: '● Active', color: '#10B981', bg: 'rgba(16,185,129,0.08)' },
-      config_needed: { label: '⚠ Setup needed', color: '#F59E0B', bg: 'rgba(245,158,11,0.08)' },
-      optional: { label: '○ Optional', color: '#3B82F6', bg: 'rgba(59,130,246,0.08)' },
-      installing: { label: '⏳ Installing', color: '#8B5CF6', bg: 'rgba(139,92,246,0.08)' },
-    }[status];
-  };
+  const statusBadge = getStatusBadge;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', fontFamily: "'Inter', sans-serif" }}>
@@ -201,7 +203,7 @@ const PluginPanel: React.FC = () => {
               placeholder="https://raw.githubusercontent.com/.../plugin.json"
               className="input-field"
               style={{ flex: 1, fontSize: '0.78rem', padding: '7px 10px' }}
-            />
+             aria-label="Search plugins" />
             <button type="button"
               onClick={addCommunityPlugin}
               disabled={adding}
@@ -322,7 +324,7 @@ const PluginPanel: React.FC = () => {
                               placeholder={def.placeholder}
                               className="input-field"
                               style={{ fontSize: '0.77rem', padding: '6px 10px', width: '100%', boxSizing: 'border-box' }}
-                            />
+                             aria-label="Search skill" />
                           </div>
                         ))}
                         <div style={{ display: 'flex', gap: '6px', marginTop: '2px' }}>

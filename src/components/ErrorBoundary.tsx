@@ -168,9 +168,8 @@ class ErrorBoundary extends Component<Props, State> {
               </div>
 
               {this.state._showPurgeConfirm && (
-                <div
-                  role="dialog"
-                  aria-modal="true"
+                <dialog
+                  open
                   aria-label="Confirm cache reset"
                   className="glass-panel"
                   style={{
@@ -179,6 +178,8 @@ class ErrorBoundary extends Component<Props, State> {
                     background: 'rgba(36, 36, 36, 0.6)',
                     border: '1px solid var(--accent-primary)',
                     display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'stretch',
+                    color: 'var(--text-primary)',
+                    margin: 0,
                   }}
                 >
                   <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
@@ -200,7 +201,7 @@ class ErrorBoundary extends Component<Props, State> {
                       Confirm Reset
                     </button>
                   </div>
-                </div>
+                </dialog>
               )}
             </div>
           </div>

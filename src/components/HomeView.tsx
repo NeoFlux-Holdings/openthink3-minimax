@@ -52,8 +52,7 @@ const HomeView: React.FC<HomeViewProps> = ({ onStartThread, recentThreads, onSel
         <div style={{ textAlign: 'center' }}>
           <h1 style={{
             fontSize: isMobile ? '1.875rem' : '3rem', marginBottom: '8px',
-            background: 'linear-gradient(to right, #fff, #A1A1AA)',
-            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+            color: 'var(--text-primary)',
             lineHeight: 1.15, padding: isMobile ? '0 8px' : 0,
           }}>
             What do you need done?
@@ -109,7 +108,7 @@ const HomeView: React.FC<HomeViewProps> = ({ onStartThread, recentThreads, onSel
                   handleSubmit(e);
                 }
               }}
-            />
+             aria-label="Describe your task" />
 
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: isMobile ? '8px 12px 12px' : '12px 20px 16px' }}>
               <button type="button" className="btn btn-ghost" aria-label="Attach file" style={{ padding: '8px', minWidth: 40, minHeight: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -136,13 +135,12 @@ const HomeView: React.FC<HomeViewProps> = ({ onStartThread, recentThreads, onSel
             <h3 style={{ fontSize: '1rem', color: 'var(--text-secondary)', marginBottom: '16px', paddingLeft: '8px' }}>Recent threads</h3>
             <div className="home-recent-threads" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '16px' }}>
               {recentThreads.map(thread => (
-                <div
+                <button
+                  type="button"
                   key={thread.id}
                   onClick={() => onSelectThread(thread.id)}
                   className="glass-panel thread-card"
-                  role="button"
-                  tabIndex={0}
-                  style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', cursor: 'pointer', transition: 'transform 0.2s, border-color 0.2s', minHeight: 64 }}
+                  style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', cursor: 'pointer', transition: 'transform 0.2s, border-color 0.2s', minHeight: 64, color: 'var(--text-primary)', textAlign: 'left', background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}
                 >
                   <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
                     <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: 'var(--bg-elevated)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -153,7 +151,7 @@ const HomeView: React.FC<HomeViewProps> = ({ onStartThread, recentThreads, onSel
                       <p style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', margin: 0 }}>{thread.updatedAt}</p>
                     </div>
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           </div>

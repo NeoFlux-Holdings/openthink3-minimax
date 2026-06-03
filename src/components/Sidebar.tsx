@@ -31,12 +31,11 @@ const Sidebar: React.FC<SidebarProps> = ({
   onOpenPinnedSummaries,
 }) => {
   const [isSummariesExpanded, setIsSummariesExpanded] = useState(true);
-  const [isSummariesPoppedOut, setIsSummariesPoppedOut] = useState(false);
+  const [isSummariesPoppedOut, setIsSummariesPoppedOut] = useState(() => {
+    return localStorage.getItem('openthink_popout_summaries') === 'true';
+  });
 
   useEffect(() => {
-    const saved = localStorage.getItem('openthink_popout_summaries');
-    if (saved) setIsSummariesPoppedOut(saved === 'true');
-
     const handleStorage = (e: StorageEvent) => {
       if (e.key === 'openthink_popout_summaries') {
         setIsSummariesPoppedOut(e.newValue === 'true');
@@ -80,7 +79,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       className={`sidebar ${isCollapsed && !isMobileDrawer ? 'collapsed' : ''}`}
       style={{
         width: isMobileDrawer ? '100%' : (isCollapsed ? 0 : 'var(--sidebar-width)'),
-        transition: 'width 0.3s',
+        transition: 'transform 0.3s, opacity 0.3s',
       }}
     >
       {(!isCollapsed || isMobileDrawer) && (
@@ -127,22 +126,29 @@ const Sidebar: React.FC<SidebarProps> = ({
 
           {/* Pinned Summaries Collapsible & Pop-out Section */}
           <div style={{ marginBottom: '24px' }}>
-            <div 
-              onClick={() => setIsSummariesExpanded(!isSummariesExpanded)}
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-tertiary)', letterSpacing: '0.05em', fontWeight: 600, padding: '4px 8px', marginBottom: '8px', cursor: 'pointer', userSelect: 'none' }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-tertiary)', letterSpacing: '0.05em', fontWeight: 600, padding: '4px 8px', marginBottom: '8px', userSelect: 'none', borderRadius: 4 }}>
+              <button
+                type="button"
+                aria-expanded={isSummariesExpanded}
+                onClick={() => setIsSummariesExpanded(v => !v)}
+                onFocus={e => { (e.currentTarget.parentElement as HTMLElement).style.background = 'rgba(255,255,255,0.04)'; }}
+                onBlur={e => { (e.currentTarget.parentElement as HTMLElement).style.background = 'transparent'; }}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1, cursor: 'pointer', background: 'transparent', border: 'none', color: 'inherit', font: 'inherit', textTransform: 'inherit', letterSpacing: 'inherit', padding: 0, textAlign: 'left' }}
+              >
                 <Pin size={12} />
                 <span>Pinned Summaries</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                {!isSummariesPoppedOut && (
-                  <button type="button" onClick={handlePopOutSummaries} style={{ color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center' }} onMouseOver={e => e.stopPropagation()}>
-                    <ExternalLink size={10} />
-                  </button>
-                )}
-                <span>{isSummariesExpanded ? '▼' : '▶'}</span>
-              </div>
+                <span style={{ marginLeft: 'auto' }}>{isSummariesExpanded ? '▼' : '▶'}</span>
+              </button>
+              {!isSummariesPoppedOut && (
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); handlePopOutSummaries(e as unknown as React.MouseEvent); }}
+                  aria-label="Pop out pinned summaries"
+                  style={{ color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', background: 'transparent', border: 'none', padding: 2, marginLeft: 6, cursor: 'pointer' }}
+                >
+                  <ExternalLink size={10} />
+                </button>
+              )}
             </div>
 
             {isSummariesExpanded && (

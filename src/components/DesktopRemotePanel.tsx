@@ -5,6 +5,8 @@ import {
   GitFork, ToggleLeft, ToggleRight, Zap, ChevronDown, ChevronUp, Plus, X
 } from 'lucide-react';
 
+const CUSTOM_DOMAIN_KEY = 'openthink_custom_domain';
+
 interface LocalService {
   id: string;
   name: string;
@@ -13,6 +15,43 @@ interface LocalService {
   active: boolean;
   type: 'Codex' | 'Claude MCP' | 'Ollama' | 'Custom';
 }
+
+const PANEL_STYLE: React.CSSProperties = {
+  background: 'rgba(255,255,255,0.02)',
+  border: '1px solid var(--border-subtle)',
+  borderRadius: '10px',
+  padding: '16px',
+};
+
+const ROW_STYLE: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '8px',
+};
+
+const badge = (color: string): React.CSSProperties => ({
+  fontSize: '0.75rem',
+  fontWeight: 800,
+  padding: '2px 6px',
+  borderRadius: '4px',
+  background: `${color}18`,
+  color,
+  textTransform: 'uppercase',
+  letterSpacing: '0.04em',
+  flexShrink: 0,
+});
+
+const INPUT_SM: React.CSSProperties = {
+  flex: 1,
+  background: 'rgba(0,0,0,0.25)',
+  border: '1px solid var(--border-subtle)',
+  borderRadius: '6px',
+  padding: '6px 10px',
+  color: 'var(--text-primary)',
+  fontSize: '0.8rem',
+  fontFamily: 'monospace',
+  outline: 'none',
+};
 
 const TYPE_COLORS: Record<string, string> = {
   'Ollama':     '#8B5CF6',
@@ -26,7 +65,7 @@ const DesktopRemotePanel: React.FC = () => {
   const tunnelId = 'ot-tunnel-84b2c9';
 
   const [baseDomain, setBaseDomain] = useState(() =>
-    localStorage.getItem('openthink_custom_domain') || 'jiggytom.com'
+    localStorage.getItem(CUSTOM_DOMAIN_KEY) || 'jiggytom.com'
   );
 
   const [services, setServices] = useState<LocalService[]>([
@@ -39,7 +78,7 @@ const DesktopRemotePanel: React.FC = () => {
   const [scanningModels, setScanningModels] = useState(false);
   const [mcpTunnelActive, setMcpTunnelActive] = useState(false);
   const [localAgentActive, setLocalAgentActive] = useState(false);
-  const [checkingLocalAgent, setCheckingLocalAgent] = useState(false);
+  const [checkingLocalAgent, setCheckingLocalAgent] = useState(true);
 
   const [remoteCommand, setRemoteCommand]   = useState('');
   const [commandExecuting, setCommandExecuting] = useState(false);
@@ -62,7 +101,7 @@ const DesktopRemotePanel: React.FC = () => {
 
   useEffect(() => {
     const h = () => {
-      const d = localStorage.getItem('openthink_custom_domain');
+      const d = localStorage.getItem(CUSTOM_DOMAIN_KEY);
       if (d) setBaseDomain(d);
     };
     window.addEventListener('storage', h);
@@ -76,14 +115,18 @@ const DesktopRemotePanel: React.FC = () => {
     setConsoleLogs(p => [...p, `[${t}] ${msg}`]);
   };
 
+  const initialCheckDone = useRef(false);
   const checkLocalAgent = async () => {
-    setCheckingLocalAgent(true);
+    if (initialCheckDone.current) setCheckingLocalAgent(true);
     try {
       const r = await fetch('http://127.0.0.1:8787');
       setLocalAgentActive(r.ok);
       if (r.ok) addLog('🖥️ Local Wrangler Agent detected at :8787');
     } catch { setLocalAgentActive(false); }
-    finally { setCheckingLocalAgent(false); }
+    finally {
+      setCheckingLocalAgent(false);
+      initialCheckDone.current = true;
+    }
   };
 
   const scanOllama = async () => {
@@ -114,9 +157,9 @@ const DesktopRemotePanel: React.FC = () => {
       addLog('🚀 Establishing Cloudflare Tunnel...');
       setTimeout(() => {
         addLog(`✨ Tunnel live! ID: ${tunnelId}`);
-        services.filter(s => s.active).forEach(s =>
-          addLog(`🔗 ${s.subdomain}.${baseDomain} → localhost:${s.localPort}`)
-        );
+        services.forEach(s => {
+          if (s.active) addLog(`🔗 ${s.subdomain}.${baseDomain} → localhost:${s.localPort}`);
+        });
         scanOllama();
       }, 1200);
     }
@@ -194,42 +237,9 @@ const DesktopRemotePanel: React.FC = () => {
   }, [tunnelActive, services]);
 
   // ─── Styles ──────────────────────────────────────────────────────────────
-  const panel: React.CSSProperties = {
-    background: 'rgba(255,255,255,0.02)',
-    border: '1px solid var(--border-subtle)',
-    borderRadius: '10px',
-    padding: '16px',
-  };
-
-  const rowStyle: React.CSSProperties = {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-  };
-
-  const badge = (color: string): React.CSSProperties => ({
-    fontSize: '0.75rem',
-    fontWeight: 800,
-    padding: '2px 6px',
-    borderRadius: '4px',
-    background: `${color}18`,
-    color,
-    textTransform: 'uppercase',
-    letterSpacing: '0.04em',
-    flexShrink: 0,
-  });
-
-  const inputSm: React.CSSProperties = {
-    flex: 1,
-    background: 'rgba(0,0,0,0.25)',
-    border: '1px solid var(--border-subtle)',
-    borderRadius: '6px',
-    padding: '6px 10px',
-    color: 'var(--text-primary)',
-    fontSize: '0.8rem',
-    fontFamily: 'monospace',
-    outline: 'none',
-  };
+  const panel = PANEL_STYLE;
+  const rowStyle = ROW_STYLE;
+  const inputSm = INPUT_SM;
 
   return (
     <div className="col-flex-gap-16" style={{ fontFamily: "'Inter', sans-serif" }}>
@@ -353,12 +363,14 @@ const DesktopRemotePanel: React.FC = () => {
               <input
                 style={inputSm}
                 placeholder="Name"
+                aria-label="Service name"
                 value={newService.name}
                 onChange={e => setNewService(p => ({ ...p, name: e.target.value }))}
               />
               <input
                 style={{ ...inputSm, flex: '0 0 110px' }}
                 placeholder="subdomain"
+                aria-label="Service subdomain"
                 value={newService.subdomain}
                 onChange={e => setNewService(p => ({ ...p, subdomain: e.target.value }))}
               />
@@ -366,6 +378,7 @@ const DesktopRemotePanel: React.FC = () => {
                 style={{ ...inputSm, flex: '0 0 70px' }}
                 placeholder="Port"
                 type="number"
+                aria-label="Service port"
                 value={newService.port}
                 onChange={e => setNewService(p => ({ ...p, port: e.target.value }))}
               />
@@ -423,6 +436,7 @@ const DesktopRemotePanel: React.FC = () => {
                 onKeyDown={e => e.key === 'Enter' && runCommand()}
                 placeholder="e.g. git status  ·  wrangler tail"
                 className="input-field"
+                aria-label="Remote command"
                 style={{ flex: 1, fontSize: '0.8rem', padding: '7px 10px', background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)', borderRadius: '6px' }}
                 disabled={commandExecuting}
               />

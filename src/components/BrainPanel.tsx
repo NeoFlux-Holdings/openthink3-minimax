@@ -35,6 +35,24 @@ const SKILL_KEYS = {
   gstack: 'skill_gstack_discipline',
 };
 
+const panel: React.CSSProperties = {
+  background: 'rgba(255,255,255,0.02)',
+  border: '1px solid var(--border-subtle)',
+  borderRadius: '10px',
+  padding: '16px',
+};
+
+const skillCard = (active: boolean, color: string): React.CSSProperties => ({
+  display: 'flex',
+  alignItems: 'center',
+  gap: '12px',
+  padding: '12px 14px',
+  borderRadius: '8px',
+  background: active ? `${color}08` : 'rgba(255,255,255,0.015)',
+  border: `1px solid ${active ? `${color}25` : 'var(--border-subtle)'}`,
+  transition: 'background ease 0.2s, color ease 0.2s, border-color ease 0.2s, transform ease 0.2s, opacity ease 0.2s, box-shadow ease 0.2s',
+});
+
 const BrainPanel: React.FC = () => {
   const [status, setStatus] = useState<BrainStatus>({
     connected: false, pageCount: 0, entityCount: 0,
@@ -194,25 +212,6 @@ const BrainPanel: React.FC = () => {
     setShowConfig(false);
   };
 
-  // ── Styles ────────────────────────────────────────────────────────
-  const panel: React.CSSProperties = {
-    background: 'rgba(255,255,255,0.02)',
-    border: '1px solid var(--border-subtle)',
-    borderRadius: '10px',
-    padding: '16px',
-  };
-
-  const skillCard = (active: boolean, color: string): React.CSSProperties => ({
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    padding: '12px 14px',
-    borderRadius: '8px',
-    background: active ? `${color}08` : 'rgba(255,255,255,0.015)',
-    border: `1px solid ${active ? `${color}25` : 'var(--border-subtle)'}`,
-    transition: 'background ease 0.2s, color ease 0.2s, border-color ease 0.2s, transform ease 0.2s, opacity ease 0.2s, box-shadow ease 0.2s',
-  });
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', fontFamily: "'Inter', sans-serif" }}>
 
@@ -288,6 +287,7 @@ const BrainPanel: React.FC = () => {
               onChange={e => setVmUrl(e.target.value)}
               placeholder="https://your-vm.exe.xyz (port 4000 — gbrain serve --http)"
               className="input-field"
+              aria-label="GBrain VM Endpoint URL"
               style={{ fontSize: '0.78rem', padding: '7px 10px' }}
             />
             <button type="button"
@@ -358,6 +358,7 @@ const BrainPanel: React.FC = () => {
             onKeyDown={e => e.key === 'Enter' && runSearch()}
             placeholder="What do I need to know before my meeting with Alice?"
             className="input-field"
+            aria-label="Brain memory search query"
             style={{ flex: 1, fontSize: '0.8rem', padding: '8px 10px' }}
           />
           <button type="button"
@@ -413,6 +414,7 @@ const BrainPanel: React.FC = () => {
               onChange={e => setIngestTitle(e.target.value)}
               placeholder="Page title (e.g. meeting/2026-06-02-alice)"
               className="input-field"
+              aria-label="Ingest page title"
               style={{ fontSize: '0.78rem', padding: '7px 10px' }}
             />
             <textarea
@@ -420,6 +422,7 @@ const BrainPanel: React.FC = () => {
               onChange={e => setIngestText(e.target.value)}
               placeholder="Paste markdown content, meeting notes, ideas, or any knowledge to add to the brain..."
               className="input-field"
+              aria-label="Ingest markdown content"
               style={{ fontSize: '0.78rem', padding: '8px 10px', minHeight: '90px', resize: 'vertical' }}
             />
             {ingestMsg && (

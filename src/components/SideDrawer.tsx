@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useEffectEvent, type ReactNode, useRef } from 'react';
 import { X } from 'lucide-react';
 
 interface SideDrawerProps {
@@ -9,9 +9,11 @@ interface SideDrawerProps {
 }
 
 export function SideDrawer({ open, onClose, children, ariaLabel = 'Menu' }: SideDrawerProps) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const onCloseEvent = useEffectEvent(onClose);
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onCloseEvent(); };
     window.addEventListener('keydown', onKey);
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -19,41 +21,27 @@ export function SideDrawer({ open, onClose, children, ariaLabel = 'Menu' }: Side
       window.removeEventListener('keydown', onKey);
       document.body.style.overflow = prevOverflow;
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 
+  const onBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.target === e.currentTarget) onClose();
+  };
+
   return (
     <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={ariaLabel}
-      onClick={onClose}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 900,
-        background: 'rgba(0, 0, 0, 0.45)',
-        backdropFilter: 'blur(6px)',
-        WebkitBackdropFilter: 'blur(6px)',
-        display: 'flex',
-        animation: 'drawer-fade-in 0.18s ease-out',
-        paddingTop: 'env(safe-area-inset-top, 0px)',
-        paddingBottom: 'env(safe-area-inset-bottom, 0px)',
-      }}
+      onClick={onBackdropClick}
+      onKeyDown={(e) => { if (e.key === 'Escape') onClose(); }}
+      role="presentation"
+      className="drawer-backdrop"
     >
-      <aside
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: 'min(320px, 88vw)',
-          height: '100%',
-          background: 'var(--bg-primary)',
-          borderRight: '1px solid var(--border-subtle)',
-          boxShadow: '4px 0 24px rgba(0, 0, 0, 0.45)',
-          display: 'flex',
-          flexDirection: 'column',
-          animation: 'drawer-slide-in 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
-        }}
+      <dialog
+        ref={ref}
+        open
+        aria-label={ariaLabel}
+        aria-modal="true"
+        className="drawer-panel"
       >
         <div
           style={{
@@ -95,7 +83,7 @@ export function SideDrawer({ open, onClose, children, ariaLabel = 'Menu' }: Side
         >
           {children}
         </div>
-      </aside>
+      </dialog>
     </div>
   );
 }

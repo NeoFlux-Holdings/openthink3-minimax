@@ -5,18 +5,23 @@ interface CanvasPanelProps {
   isPoppedOut?: boolean;
 }
 
+function dockCanvas() {
+  localStorage.setItem('openthink_popout_canvas', 'false');
+  window.dispatchEvent(new Event('storage'));
+  window.close();
+}
+
 const CanvasPanel: React.FC<CanvasPanelProps> = ({ isPoppedOut = false }) => {
   const [notepad, setNotepad] = useState(() => {
-    return localStorage.getItem('openthink_intel_canvas_notes') || 
+    return localStorage.getItem('openthink_intel_canvas_notes') ||
       '// Collaborator Sync Stream\n- Setup production Cloudflare Durable Object SQLite tables.\n- Ensure R2 repo snapshots align with local worktrees.';
   });
 
-  const [activeModel, setActiveModel] = useState('@cf/meta/llama-3.1-8b-instruct');
+  const [activeModel, setActiveModel] = useState(() => {
+    return localStorage.getItem('openthink_active_model') || '@cf/meta/llama-3.1-8b-instruct';
+  });
 
   useEffect(() => {
-    const saved = localStorage.getItem('openthink_active_model');
-    if (saved) setActiveModel(saved);
-
     const handleStorage = (e: StorageEvent) => {
       if (e.key === 'openthink_intel_canvas_notes' && e.newValue !== null) {
         setNotepad(e.newValue);
@@ -36,11 +41,7 @@ const CanvasPanel: React.FC<CanvasPanelProps> = ({ isPoppedOut = false }) => {
     window.dispatchEvent(new Event('storage'));
   };
 
-  const handleDock = () => {
-    localStorage.setItem('openthink_popout_canvas', 'false');
-    window.dispatchEvent(new Event('storage'));
-    window.close();
-  };
+  const handleDock = dockCanvas;
 
   return (
     <div style={{
@@ -113,7 +114,7 @@ const CanvasPanel: React.FC<CanvasPanelProps> = ({ isPoppedOut = false }) => {
           Instead of relying on third-party remote endpoints, OpenThink archives local code diffs and environment structures inside Durable Objects. The active branch is committed directly to a DO SQLite transaction table, which automatically backups incrementally as physical snapshots to <strong style={{ color: 'var(--text-primary)' }}>Cloudflare R2 Objects</strong>.
         </p>
         <div style={{ background: 'black', borderRadius: '6px', padding: '12px', fontFamily: 'monospace', fontSize: '0.75rem', color: '#10B981', border: '1px solid var(--border-subtle)' }}>
-          <span style={{ color: '#6B7280' }}>// SQLite commit schema inside DO</span><br />
+          <span style={{ color: '#6B7280' }}>{'\u002F\u002F SQLite commit schema inside DO'}</span><br />
           <span style={{ color: 'var(--accent-secondary)' }}>CREATE TABLE</span> commit_snapshots (<br />
           &nbsp;&nbsp;commit_hash <span style={{ color: 'var(--accent-tertiary)' }}>TEXT</span> PRIMARY KEY,<br />
           &nbsp;&nbsp;branch_name <span style={{ color: 'var(--accent-tertiary)' }}>TEXT</span>,<br />
@@ -132,6 +133,7 @@ const CanvasPanel: React.FC<CanvasPanelProps> = ({ isPoppedOut = false }) => {
         <textarea
           value={notepad}
           onChange={e => handleNotepadChange(e.target.value)}
+          className="focus-ring"
           style={{
             flex: 1,
             width: '100%',
@@ -143,11 +145,10 @@ const CanvasPanel: React.FC<CanvasPanelProps> = ({ isPoppedOut = false }) => {
             fontFamily: 'monospace',
             fontSize: '0.8rem',
             lineHeight: 1.5,
-            outline: 'none',
             resize: 'none'
           }}
           placeholder="// Type custom developer notes to sync instantly across popped-out tabs..."
-        />
+         aria-label="Canvas prompt input" />
       </div>
     </div>
   );

@@ -29,8 +29,10 @@ export class OrchestratorDO extends McpAgent<Env> {
       "Check the current context and return relevant info across threads",
       { query: z.string() },
       async ({ query }) => {
-        const threadKeys = await this.env.MEMORIES.list({ prefix: "thread:" });
-        const memoryKeys = await this.env.MEMORIES.list({ prefix: "memory:" });
+        const [threadKeys, memoryKeys] = await Promise.all([
+          this.env.MEMORIES.list({ prefix: "thread:" }),
+          this.env.MEMORIES.list({ prefix: "memory:" }),
+        ]);
         const recentThreads = threadKeys.keys.slice(0, 5).map((k: any) => k.name);
         const recentMemories = memoryKeys.keys.slice(0, 5).map((k: any) => k.name);
         return {
@@ -161,11 +163,12 @@ If you need context or memory, call the check_context tool.`;
               }) as any;
 
               if (aiResponse.tool_calls && aiResponse.tool_calls.length > 0) {
-                for (const tc of aiResponse.tool_calls) {
+                const mcpToolByName = new Map(mcpTools.map(t => [t.name, t]));
+                await Promise.all(aiResponse.tool_calls.map(async (tc) => {
                   // Inform frontend we are calling a tool
                   await writer.write(encoder.encode(`data: ${JSON.stringify({ status: `Calling tool ${tc.name}...` })}\n\n`));
 
-                  const mcpTool = mcpTools.find(t => t.name === tc.name);
+                  const mcpTool = mcpToolByName.get(tc.name);
                   if (mcpTool) {
                     const toolResult = await this.mcp.callTool({
                       serverId: mcpTool.serverId,
@@ -184,7 +187,7 @@ If you need context or memory, call the check_context tool.`;
                       content: JSON.stringify(toolResult)
                     });
                   }
-                }
+                }));
               } else {
                 // No more tool calls, stream the final response text
                 loop = false;
@@ -207,28 +210,22 @@ If you need context or memory, call the check_context tool.`;
 
                   const chunk = decoder.decode(value, { stream: true });
                   buffer += chunk;
-                  
-                  let boundary = buffer.indexOf("\n");
-                  while (boundary !== -1) {
-                    const line = buffer.slice(0, boundary).trim();
-                    buffer = buffer.slice(boundary + 1);
-                    
-                    if (line.startsWith("data: ")) {
-                      if (line.trim() === "data: [DONE]") {
-                        // End of stream indicator
-                      } else {
-                        try {
-                          const parsed = JSON.parse(line.slice(6));
-                          if (parsed.response) {
-                            fullText += parsed.response;
-                            await writer.write(encoder.encode(`data: ${JSON.stringify({ response: parsed.response })}\n\n`));
-                          }
-                        } catch (e) {
-                          // Ignore parse errors on incomplete JSON lines
-                        }
+
+                  const parts = buffer.split("\n");
+                  buffer = parts.pop() ?? "";
+                  for (const rawLine of parts) {
+                    const line = rawLine.trim();
+                    if (!line.startsWith("data: ")) continue;
+                    if (line === "data: [DONE]") continue;
+                    try {
+                      const parsed = JSON.parse(line.slice(6));
+                      if (parsed.response) {
+                        fullText += parsed.response;
+                        await writer.write(encoder.encode(`data: ${JSON.stringify({ response: parsed.response })}\n\n`));
                       }
+                    } catch (e) {
+                      // Ignore parse errors on incomplete JSON lines
                     }
-                    boundary = buffer.indexOf("\n");
                   }
                 }
 
@@ -397,9 +394,9 @@ export default {
             } else {
               // Parse scorecard from output
               const lines = output.split("\n");
-              for (const line of lines) {
-                if (line.trim()) await sendEvent({ log: line });
-              }
+              const trimmedLines: string[] = [];
+              for (const l of lines) if (l.trim()) trimmedLines.push(l);
+              await Promise.all(trimmedLines.map(line => sendEvent({ log: line })));
               // Try to extract JSON scorecard
               const jsonLine = lines.find(l => l.trim().startsWith("{"));
               if (jsonLine) {
@@ -836,10 +833,10 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
       }
     }
     // 3. Commit each file via the Contents API
-    for (const f of body.files) {
+    await Promise.all(body.files.map(async (f) => {
       const existing = await ghFetch(env, `/repos/${env.GH_REPO}/contents/${encodeURIComponent(f.path)}?ref=${body.head}`).catch(() => null);
       const sha = existing && (existing as any).sha ? (existing as any).sha : undefined;
-      await ghFetch(env, `/repos/${env.GH_REPO}/contents/${encodeURIComponent(f.path)}`, {
+      return ghFetch(env, `/repos/${env.GH_REPO}/contents/${encodeURIComponent(f.path)}`, {
         method: "PUT",
         body: JSON.stringify({
           message: body.title,
@@ -848,7 +845,7 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
           sha,
         }),
       });
-    }
+    }));
     // 4. Open the PR
     const pr = await ghFetch(env, `/repos/${env.GH_REPO}/pulls`, {
       method: "POST",

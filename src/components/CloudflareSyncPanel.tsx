@@ -137,13 +137,17 @@ export default function CloudflareSyncPanel({ apiBase }: CloudflareSyncPanelProp
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [localMeta, setLocalMeta] = useState<BundleMeta | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [log, setLog] = useState<string[]>([]);
+  const [log, setLog] = useState<string[]>(() => {
+    const stored = localStorage.getItem(LSK.lastPullTs);
+    return stored ? [`Last pull: ${relTime(parseInt(stored, 10))}`] : [];
+  });
   const [error, setError] = useState<string | null>(null);
+  const showError = (e: string | null) => setError(e);
 
   const append = (s: string) => setLog(l => [...l, s]);
 
   const refreshAll = useCallback(async () => {
-    setError(null);
+    showError(null);
     try {
       const [s, m, h, b] = await Promise.all([
         api('/api/cf/status', {}, base),
@@ -157,22 +161,16 @@ export default function CloudflareSyncPanel({ apiBase }: CloudflareSyncPanelProp
       setHistory(h.history || []);
       setLocalMeta(b);
     } catch (e: any) {
-      setError(e.message || String(e));
+      showError(e.message || String(e));
     }
   }, [base]);
 
   useEffect(() => { refreshAll(); }, [refreshAll]);
 
-  // Track last-pull / last-push timestamps in localStorage so they survive refreshes
-  useEffect(() => {
-    const stored = localStorage.getItem(LSK.lastPullTs);
-    if (stored) append(`Last pull: ${relTime(parseInt(stored, 10))}`);
-  }, []);
-
   /* ── Pull: download the remote worker bundle + refresh manifest ── */
   const handlePull = async () => {
     setBusy('pull');
-    setError(null);
+    showError(null);
     try {
       const r = await fetch(`${base}/api/cf/bundle/worker`);
       if (!r.ok) {
@@ -190,7 +188,7 @@ export default function CloudflareSyncPanel({ apiBase }: CloudflareSyncPanelProp
       append(`Pulled remote bundle (${fmtBytes(code.length)}, sha ${shortSha(meta.sha256)})`);
       await refreshAll();
     } catch (e: any) {
-      setError(e.message || String(e));
+      showError(e.message || String(e));
     } finally {
       setBusy(null);
     }
@@ -199,7 +197,7 @@ export default function CloudflareSyncPanel({ apiBase }: CloudflareSyncPanelProp
   /* ── Push: fetch local bundle, stage, then deploy ── */
   const handlePush = async () => {
     setBusy('push');
-    setError(null);
+    showError(null);
     try {
       append('Reading local worker-bundle.js…');
       const r = await fetch('/worker-bundle.js');
@@ -228,7 +226,7 @@ export default function CloudflareSyncPanel({ apiBase }: CloudflareSyncPanelProp
       localStorage.setItem(LSK.lastPushTs, String(Date.now()));
       await refreshAll();
     } catch (e: any) {
-      setError(e.message || String(e));
+      showError(e.message || String(e));
     } finally {
       setBusy(null);
     }
@@ -237,7 +235,7 @@ export default function CloudflareSyncPanel({ apiBase }: CloudflareSyncPanelProp
   /* ── Agent PR: open a GitHub PR for self-evolution ── */
   const handleAgentPR = async () => {
     setBusy('pr');
-    setError(null);
+    showError(null);
     try {
       if (!status?.configured.GH_TOKEN) throw new Error('GH_TOKEN not configured on worker');
       if (!status?.configured.GH_REPO) throw new Error('GH_REPO not configured on worker');
@@ -258,7 +256,7 @@ export default function CloudflareSyncPanel({ apiBase }: CloudflareSyncPanelProp
       append(`PR opened ✓ (#${r.prNumber}: ${r.url})`);
       await refreshAll();
     } catch (e: any) {
-      setError(e.message || String(e));
+      showError(e.message || String(e));
     } finally {
       setBusy(null);
     }
@@ -327,7 +325,7 @@ export default function CloudflareSyncPanel({ apiBase }: CloudflareSyncPanelProp
         {inSync ? (
           <><Check size={14} color="#10B981" /> <span style={{ color: '#10B981' }}>Local and remote are in sync</span></>
         ) : (
-          <><AlertCircle size={14} color="#F59E0B" /> <span style={{ color: '#F59E0B' }}>Local and remote differ — push or pull to reconcile</span></>
+          <><AlertCircle size={14} color="#F59E0B" /> <span style={{ color: '#F59E0B' }}>Local and remote differ - push or pull to reconcile</span></>
         )}
         {staged && (
           <span style={{ marginLeft: 12, padding: '2px 8px', background: 'rgba(245, 158, 11, 0.15)', color: '#F59E0B', borderRadius: 4, fontWeight: 600 }}>

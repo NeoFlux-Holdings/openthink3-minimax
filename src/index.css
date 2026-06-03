@@ -354,6 +354,16 @@ a {
   box-shadow: 0 0 0 3px var(--accent-glow);
 }
 
+.focus-ring:focus,
+.focus-ring:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+.focus-ring:focus:not(:focus-visible) {
+  outline: none;
+}
+
 /* Utility classes */
 .text-gradient {
   background: linear-gradient(to right, var(--accent-primary), var(--accent-tertiary));
@@ -582,6 +592,75 @@ a {
   50% { opacity: 0.4; transform: scale(0.8); }
 }
 .pulse-dot { animation: pulse-dot 1.6s ease-in-out infinite; }
+
+/* Drawer / sheet containers */
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  animation: drawer-fade-in 0.18s ease-out;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.drawer-panel {
+  width: min(320px, 88vw);
+  height: 100%;
+  background: var(--bg-primary);
+  border: none;
+  border-right: 1px solid var(--border-subtle);
+  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  animation: drawer-slide-in 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  color: var(--text-primary);
+  overscroll-behavior: contain;
+}
+.drawer-panel::backdrop { background: transparent; }
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  animation: sheet-fade-in 0.18s ease-out;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.sheet-panel {
+  width: 100%;
+  max-width: 480px;
+  max-height: 88vh;
+  background: var(--bg-primary);
+  border: none;
+  border-top-left-radius: 16px;
+  border-top-right-radius: 16px;
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  animation: sheet-slide-up 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+  color: var(--text-primary);
+}
+.sheet-panel::backdrop { background: transparent; }
+.sheet-handle {
+  width: 40px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--text-tertiary);
+  margin: 10px auto 0;
+  flex-shrink: 0;
+}
 .spin { animation: spin 1.2s linear infinite; }
 @keyframes spin { 100% { transform: rotate(360deg); } }
 .fade-in { animation: fadeIn 0.3s ease-in; }

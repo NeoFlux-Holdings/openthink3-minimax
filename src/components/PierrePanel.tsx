@@ -34,17 +34,17 @@ const PierrePanel = ({ isPoppedOut = false }: { isPoppedOut?: boolean }) => {
       interval = setInterval(() => {
         setTasks(prev => {
           const runningIdx = prev.findIndex(t => t.status === 'running');
-          if (runningIdx !== -1) {
-            const next = [...prev];
-            next[runningIdx].status = 'done';
-            // Start next if exists
-            if (runningIdx + 1 < next.length) {
-              next[runningIdx + 1].status = 'running';
-            }
-            setLogs(l => [...l, `Task completed: ${next[runningIdx].name}`]);
-            return next;
+          if (runningIdx === -1) return prev;
+          const next = [...prev];
+          const finished = next[runningIdx];
+          next[runningIdx] = { ...finished, status: 'done' };
+          if (runningIdx + 1 < next.length) {
+            next[runningIdx + 1] = { ...next[runningIdx + 1], status: 'running' };
+            setLogs(l => [...l, `Task completed: ${finished.name}`]);
+          } else {
+            setLogs(l => [...l, `Task completed: ${finished.name}`]);
           }
-          return prev;
+          return next;
         });
       }, 8000);
     }
@@ -130,10 +130,11 @@ const PierrePanel = ({ isPoppedOut = false }: { isPoppedOut?: boolean }) => {
           {/* Environment selector */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Active Env</span>
-            <select 
+            <select
               value={activeEnv}
               onChange={e => setActiveEnv(e.target.value)}
-              style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)', borderRadius: '4px', padding: '4px 8px', color: 'var(--text-primary)', fontSize: '0.8rem', outline: 'none' }}
+              className="focus-ring"
+              style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)', borderRadius: '4px', padding: '4px 8px', color: 'var(--text-primary)', fontSize: '0.8rem' }}
             >
               <option value="Local">Local Dev</option>
               <option value="Staging">Cloudflare Staging</option>
@@ -146,10 +147,11 @@ const PierrePanel = ({ isPoppedOut = false }: { isPoppedOut?: boolean }) => {
             <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Branch</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <GitBranch size={14} color="var(--accent-primary)" />
-              <select 
+              <select
                 value={activeBranch}
                 onChange={e => setActiveBranch(e.target.value)}
-                style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)', borderRadius: '4px', padding: '4px 8px', color: 'var(--text-primary)', fontSize: '0.8rem', outline: 'none' }}
+                className="focus-ring"
+                style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)', borderRadius: '4px', padding: '4px 8px', color: 'var(--text-primary)', fontSize: '0.8rem' }}
               >
                 <option value="feat/agent-orange-evolution">feat/agent-orange-evolution</option>
                 <option value="master">master</option>
@@ -169,7 +171,7 @@ const PierrePanel = ({ isPoppedOut = false }: { isPoppedOut?: boolean }) => {
               onChange={e => setCommitMessage(e.target.value)}
               className="input-field"
               style={{ fontSize: '0.8rem', padding: '8px 10px', background: 'var(--bg-tertiary)' }}
-            />
+             aria-label="Terminal command input" />
             <button type="button" 
               className="btn btn-primary" 
               onClick={handleSimulateCommit}

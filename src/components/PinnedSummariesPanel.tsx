@@ -9,51 +9,54 @@ interface SummaryItem {
   category: string;
 }
 
+const PINNED_SUMMARIES: SummaryItem[] = [
+  {
+    id: 'orange-core',
+    title: 'Orange Core Spec',
+    category: 'Agent System',
+    short: 'Agent Orange 0 is a self-evolving AI Durable Object orchestrator.',
+    detail: 'Operates natively inside Cloudflare Durable Objects. Features a persistent transactional SQLite engine, real-time memory consolidation across conversation threads, and native support for Model Context Protocol (MCP) clients to run custom background tasks.'
+  },
+  {
+    id: 'remote-runtime',
+    title: 'Remote Runtime Tunnels',
+    category: 'Infrastructure',
+    short: 'Cloudflare quick-tunnel brings the exe.dev VM onto the same localhost origin.',
+    detail: 'The Desktop Remote panel spawns a `cloudflared` quick-tunnel targeting 127.0.0.1:11434 for Ollama and 4000 for gbrain. Until the tunnel id is registered, the local fallback list is used and the panel shows a "not connected" badge.'
+  },
+  {
+    id: 'stacked-diffs',
+    title: 'Stacked Diffs Engine',
+    category: 'Git & Environment',
+    short: 'Pierre-style Git workflow is configured for stacked environments.',
+    detail: 'Leverages stacked PR branching structures to enable developer-friendly incremental commits. Features a live stage router (Local, Staging, Production) with simulated automated deployment pipelines.'
+  },
+  {
+    id: 'cloudflare-inference',
+    title: 'Cloudflare Inference',
+    category: 'Inference',
+    short: 'Dynamic global routing of edge-executed Workers AI models.',
+    detail: 'Enables hot-swapping between Llama 3.1, Llama 3.3 70B, Hermes 2 Pro, and Qwen 1.5. Real-time prompt eval latency metrics, generation speeds (tokens/sec), and cumulative conversation session cost trackers are fully active.'
+  }
+];
+
+function dockSummaries() {
+  localStorage.setItem('openthink_popout_summaries', 'false');
+  window.dispatchEvent(new Event('storage'));
+  window.close();
+}
+
 const PinnedSummariesPanel = ({ isPoppedOut = false, onClose }: { isPoppedOut?: boolean, onClose?: () => void }) => {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const summaries: SummaryItem[] = [
-    {
-      id: 'orange-core',
-      title: 'Orange Core Spec',
-      category: 'Agent System',
-      short: 'Agent Orange 0 is a self-evolving AI Durable Object orchestrator.',
-      detail: 'Operates natively inside Cloudflare Durable Objects. Features a persistent transactional SQLite engine, real-time memory consolidation across conversation threads, and native support for Model Context Protocol (MCP) clients to run custom background tasks.'
-    },
-    {
-      id: 'remote-runtime',
-      title: 'Remote Runtime Tunnels',
-      category: 'Infrastructure',
-      short: 'Cloudflare quick-tunnel brings the exe.dev VM onto the same localhost origin.',
-      detail: 'The Desktop Remote panel spawns a `cloudflared` quick-tunnel targeting 127.0.0.1:11434 for Ollama and 4000 for gbrain. Until the tunnel id is registered, the local fallback list is used and the panel shows a "not connected" badge.'
-    },
-    {
-      id: 'stacked-diffs',
-      title: 'Stacked Diffs Engine',
-      category: 'Git & Environment',
-      short: 'Pierre-style Git workflow is configured for stacked environments.',
-      detail: 'Leverages stacked PR branching structures to enable developer-friendly incremental commits. Features a live stage router (Local, Staging, Production) with simulated automated deployment pipelines.'
-    },
-    {
-      id: 'cloudflare-inference',
-      title: 'Cloudflare Inference',
-      category: 'Inference',
-      short: 'Dynamic global routing of edge-executed Workers AI models.',
-      detail: 'Enables hot-swapping between Llama 3.1, Llama 3.3 70B, Hermes 2 Pro, and Qwen 1.5. Real-time prompt eval latency metrics, generation speeds (tokens/sec), and cumulative conversation session cost trackers are fully active.'
-    }
-  ];
+  const summaries = PINNED_SUMMARIES;
+  const handleDock = dockSummaries;
 
   const handleCopy = (item: SummaryItem) => {
     navigator.clipboard.writeText(`${item.title}\n${item.detail}`);
     setCopiedId(item.id);
     setTimeout(() => setCopiedId(null), 2000);
-  };
-
-  const handleDock = () => {
-    localStorage.setItem('openthink_popout_summaries', 'false');
-    window.dispatchEvent(new Event('storage'));
-    window.close();
   };
 
   return (
@@ -125,19 +128,21 @@ const PinnedSummariesPanel = ({ isPoppedOut = false, onClose }: { isPoppedOut?: 
               }}
             >
               {/* Card Title Bar */}
-              <div 
-                onClick={() => setExpandedId(isExpanded ? null : item.id)}
-                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', cursor: 'pointer' }}
-              >
-                <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                <button
+                  type="button"
+                  aria-expanded={isExpanded}
+                  onClick={() => setExpandedId(isExpanded ? null : item.id)}
+                  style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', cursor: 'pointer', flex: 1, background: 'transparent', border: 'none', padding: 0, textAlign: 'left', color: 'inherit', minWidth: 0 }}
+                >
                   <span style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--accent-secondary)', fontWeight: 700, letterSpacing: '0.05em' }}>
                     {item.category}
                   </span>
                   <h4 style={{ margin: '4px 0', fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-primary)' }}>
                     {item.title}
                   </h4>
-                </div>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                </button>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexShrink: 0 }}>
                   <button type="button"
                     onClick={(e) => {
                       e.stopPropagation();

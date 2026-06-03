@@ -82,9 +82,16 @@ const Sparkline: React.FC<{ data: number[]; color: string; height?: number }> = 
   );
 };
 
+const panel: React.CSSProperties = {
+  background: 'rgba(255,255,255,0.02)',
+  border: '1px solid var(--border-subtle)',
+  borderRadius: '10px',
+  padding: '16px',
+};
+
 const BenchmarkPanel: React.FC = () => {
   const [latest, setLatest] = useState<BenchmarkRun | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [runningEval, setRunningEval] = useState(false);
   const [evalLogs, setEvalLogs] = useState<string[]>([]);
   const [showComparison, setShowComparison] = useState(true);
@@ -94,8 +101,9 @@ const BenchmarkPanel: React.FC = () => {
 
   useEffect(() => { logRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [evalLogs]);
 
+  const initialFetchDone = useRef(false);
   const fetchLatest = async () => {
-    setLoading(true);
+    if (initialFetchDone.current) setLoading(true);
     try {
       const r = await fetch(`${getApiUrl()}/api/eval/results`);
       if (r.ok) {
@@ -108,11 +116,12 @@ const BenchmarkPanel: React.FC = () => {
       setLatest(DEMO_LATEST);
     }
     setLoading(false);
+    initialFetchDone.current = true;
   };
 
   useEffect(() => {
-    fetchLatest();
-    const interval = setInterval(fetchLatest, 60_000);
+    void fetchLatest();
+    const interval = setInterval(() => { void fetchLatest(); }, 60_000);
     return () => clearInterval(interval);
   }, []);
 
@@ -161,13 +170,6 @@ const BenchmarkPanel: React.FC = () => {
     };
     setLatest(newRun);
     setRunningEval(false);
-  };
-
-  const panel: React.CSSProperties = {
-    background: 'rgba(255,255,255,0.02)',
-    border: '1px solid var(--border-subtle)',
-    borderRadius: '10px',
-    padding: '16px',
   };
 
   return (
@@ -253,7 +255,9 @@ const BenchmarkPanel: React.FC = () => {
               <span>Progress</span><span>{evalProgress}%</span>
             </div>
             <div style={{ height: '4px', background: 'var(--bg-tertiary)', borderRadius: '2px', overflow: 'hidden' }}>
-              <div style={{ height: '100%', width: `${evalProgress}%`, background: 'linear-gradient(to right, var(--accent-primary), var(--accent-secondary))', borderRadius: '2px', transition: 'width 0.3s ease-out' }} />
+              <div style={{ height: '100%', width: '100%', background: 'var(--bg-tertiary)', borderRadius: '2px', overflow: 'hidden' }}>
+                <div style={{ height: '100%', width: '100%', background: 'linear-gradient(to right, var(--accent-primary), var(--accent-secondary))', borderRadius: '2px', transform: `scaleX(${evalProgress / 100})`, transformOrigin: 'left center', transition: 'transform 0.3s ease-out' }} />
+              </div>
             </div>
           </div>
         )}
@@ -286,14 +290,14 @@ const BenchmarkPanel: React.FC = () => {
           <div style={{ marginTop: '12px' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               <div>
-                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#10B981', marginBottom: '4px', textTransform: 'uppercase' }}>P@5 — Precision</div>
+                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#10B981', marginBottom: '4px', textTransform: 'uppercase' }}>P@5 - Precision</div>
                 <Sparkline data={HISTORY.map(h => h.p)} color="#10B981" />
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-tertiary)', marginTop: '2px' }}>
                   {HISTORY.map(h => <span key={h.ts}>{h.ts.split(' ')[0]}</span>)}
                 </div>
               </div>
               <div>
-                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#3B82F6', marginBottom: '4px', textTransform: 'uppercase' }}>R@5 — Recall</div>
+                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#3B82F6', marginBottom: '4px', textTransform: 'uppercase' }}>R@5 - Recall</div>
                 <Sparkline data={HISTORY.map(h => h.r)} color="#3B82F6" />
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-tertiary)', marginTop: '2px' }}>
                   {HISTORY.map(h => <span key={h.ts}>{h.ts.split(' ')[0]}</span>)}

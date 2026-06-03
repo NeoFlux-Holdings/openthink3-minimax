@@ -10,6 +10,10 @@ import DesktopRemotePanel from './DesktopRemotePanel';
 
 import React, { useState, useEffect } from 'react';
 
+const DEFAULT_MODEL = '@cf/meta/llama-3.1-8b-instruct';
+const ACTIVE_MODEL_KEY = 'openthink_active_model';
+const THEME_KEY = 'openthink_theme';
+
 interface ArtifactCanvasProps {
   activeCanvasTab?: 'canvas' | 'pierre' | 'harness' | 'library' | 'learning' | 'skills' | 'settings' | 'account' | 'desktop';
   setActiveCanvasTab?: (tab: 'canvas' | 'pierre' | 'harness' | 'library' | 'learning' | 'skills' | 'settings' | 'account' | 'desktop') => void;
@@ -36,15 +40,15 @@ const ArtifactCanvas: React.FC<ArtifactCanvasProps> = ({ activeCanvasTab, setAct
   });
 
   // Track the active model globally synced via localStorage
-  const [selectedModel, setSelectedModel] = useState('@cf/meta/llama-3.1-8b-instruct');
+  const [selectedModel, setSelectedModel] = useState(() => {
+    const stored = localStorage.getItem(ACTIVE_MODEL_KEY);
+    if (!stored) localStorage.setItem(ACTIVE_MODEL_KEY, DEFAULT_MODEL);
+    return stored || DEFAULT_MODEL;
+  });
 
   useEffect(() => {
-    const saved = localStorage.getItem('openthink_active_model');
-    if (saved && saved !== '@cf/meta/llama-3.1-8b-instruct') {
-      setSelectedModel(saved);
-    } else {
-      setSelectedModel('@cf/meta/llama-3.1-8b-instruct');
-      localStorage.setItem('openthink_active_model', '@cf/meta/llama-3.1-8b-instruct');
+    if (!localStorage.getItem(ACTIVE_MODEL_KEY)) {
+      localStorage.setItem(ACTIVE_MODEL_KEY, DEFAULT_MODEL);
       window.dispatchEvent(new Event('storage'));
     }
 
@@ -101,7 +105,7 @@ const ArtifactCanvas: React.FC<ArtifactCanvasProps> = ({ activeCanvasTab, setAct
 
   const handleModelChange = (model: string) => {
     setSelectedModel(model);
-    localStorage.setItem('openthink_active_model', model);
+    localStorage.setItem(ACTIVE_MODEL_KEY, model);
     // Dispatches a storage event for popped out windows
     window.dispatchEvent(new Event('storage'));
   };
@@ -261,34 +265,37 @@ const IconButton = ({ icon, active = false, onClick, ariaLabel }: { icon: React.
 /* ==========================================================================
    Library Subpanel - Prompt library that fills Chat box
    ========================================================================== */
-const LibraryPanel = () => {
-  const prompts = [
-    {
-      title: "Analyze stackedbranch diffs",
-      text: "Compare feat/agent-orange-evolution staging with local worktree and identify uncommitted hotspots."
-    },
-    {
-      title: "Configure Cloudflare Paid AI plans",
-      text: "Explain how to set up the paid wrangler bindings and credential tokens for Workers AI routing."
-    },
-    {
-      title: "Verify Convex internal tunnels",
-      text: "Generate audit logs for convex.openthink.internal to verify sub-5ms latency configurations."
-    }
-  ];
+const LIBRARY_PROMPTS = [
+  {
+    title: "Analyze stackedbranch diffs",
+    text: "Compare feat/agent-orange-evolution staging with local worktree and identify uncommitted hotspots."
+  },
+  {
+    title: "Configure Cloudflare Paid AI plans",
+    text: "Explain how to set up the paid wrangler bindings and credential tokens for Workers AI routing."
+  },
+  {
+    title: "Verify Convex internal tunnels",
+    text: "Generate audit logs for convex.openthink.internal to verify sub-5ms latency configurations."
+  }
+];
 
-  const handleFill = (text: string) => {
-    const textarea = document.querySelector('textarea.input-field') as HTMLTextAreaElement;
-    if (textarea) {
-      textarea.value = text;
-      const event = new Event('input', { bubbles: true });
-      textarea.dispatchEvent(event);
-      textarea.focus();
-    } else {
-      alert(`Prompt copied to clipboard:\n"${text}"`);
-      navigator.clipboard.writeText(text);
-    }
-  };
+function fillPromptIntoComposer(text: string) {
+  const textarea = document.querySelector('textarea.input-field') as HTMLTextAreaElement | null;
+  if (textarea) {
+    textarea.value = text;
+    const event = new Event('input', { bubbles: true });
+    textarea.dispatchEvent(event);
+    textarea.focus();
+  } else {
+    alert(`Prompt copied to clipboard:\n"${text}"`);
+    navigator.clipboard.writeText(text);
+  }
+}
+
+const LibraryPanel = () => {
+  const prompts = LIBRARY_PROMPTS;
+  const handleFill = fillPromptIntoComposer;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', color: 'var(--text-secondary)' }}>
@@ -297,17 +304,20 @@ const LibraryPanel = () => {
       </p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
         {prompts.map((p) => (
-          <div
+          <button
+            type="button"
             key={p.title}
             onClick={() => handleFill(p.text)}
-            className="glass-panel" 
-            style={{ padding: '14px', borderRadius: '8px', background: 'rgba(36,36,36,0.3)', border: '1px solid var(--border-subtle)', cursor: 'pointer', transition: 'background ease 0.15s, color ease 0.15s, border-color ease 0.15s, transform ease 0.15s, opacity ease 0.15s, box-shadow ease 0.15s' }}
+            className="glass-panel"
+            style={{ padding: '14px', borderRadius: '8px', background: 'rgba(36,36,36,0.3)', border: '1px solid var(--border-subtle)', cursor: 'pointer', transition: 'background ease 0.15s, color ease 0.15s, border-color ease 0.15s, transform ease 0.15s, opacity ease 0.15s, box-shadow ease 0.15s', textAlign: 'left', color: 'var(--text-secondary)', font: 'inherit' }}
+            onFocus={e => { e.currentTarget.style.borderColor = 'var(--accent-secondary)'; e.currentTarget.style.background = 'rgba(255,255,255,0.02)'; }}
+            onBlur={e => { e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.06)'; e.currentTarget.style.background = 'rgba(36,36,36,0.3)'; }}
             onMouseOver={e => { e.currentTarget.style.borderColor = 'var(--accent-secondary)'; e.currentTarget.style.background = 'rgba(255,255,255,0.02)'; }}
             onMouseOut={e => { e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.06)'; e.currentTarget.style.background = 'rgba(36,36,36,0.3)'; }}
           >
             <h5 style={{ margin: '0 0 6px', color: 'var(--text-primary)', fontSize: '0.85rem', fontWeight: 600 }}>{p.title}</h5>
             <p style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', margin: 0, lineHeight: 1.3 }}>"{p.text}"</p>
-          </div>
+          </button>
         ))}
       </div>
     </div>
@@ -317,22 +327,24 @@ const LibraryPanel = () => {
 /* ==========================================================================
    Learning Subpanel - Interactive Guide
    ========================================================================== */
+const LEARNING_SLIDES = [
+  {
+    title: "Cloudflare Edge GPU Nodes",
+    content: "Workers AI automatically routes requests to global edge clusters with GPUs geographically closest to you, reducing roundtrip latency from 300ms to sub-80ms."
+  },
+  {
+    title: "SQLite in Durable Objects",
+    content: "OpenThink anchors state directly in Durable Objects. DOs are transactional state-bound entities with standard high-performance SQLite engines running locally on the edge node."
+  },
+  {
+    title: "Stacked branch structures",
+    content: "By stacking commit structures instead of pushing raw branches directly to master, you maintain clean incremental staging environments where modifications stay isolated."
+  }
+];
+
 const LearningPanel = () => {
   const [slide, setSlide] = useState(0);
-  const slides = [
-    {
-      title: "Cloudflare Edge GPU Nodes",
-      content: "Workers AI automatically routes requests to global edge clusters with GPUs geographically closest to you, reducing roundtrip latency from 300ms to sub-80ms."
-    },
-    {
-      title: "SQLite in Durable Objects",
-      content: "OpenThink anchors state directly in Durable Objects. DOs are transactional state-bound entities with standard high-performance SQLite engines running locally on the edge node."
-    },
-    {
-      title: "Stacked branch structures",
-      content: "By stacking commit structures instead of pushing raw branches directly to master, you maintain clean incremental staging environments where modifications stay isolated."
-    }
-  ];
+  const slides = LEARNING_SLIDES;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', color: 'var(--text-secondary)' }}>
@@ -343,18 +355,18 @@ const LearningPanel = () => {
           <p style={{ fontSize: '0.8rem', lineHeight: 1.5, color: 'var(--text-secondary)' }}>{slides[slide].content}</p>
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '16px', gap: '10px' }}>
-          <button type="button" 
-            className="btn btn-ghost" 
-            disabled={slide === 0} 
-            onClick={() => setSlide(slide - 1)}
+          <button type="button"
+            className="btn btn-ghost"
+            disabled={slide === 0}
+            onClick={() => setSlide(s => s - 1)}
             style={{ padding: '6px 12px', fontSize: '0.75rem', color: slide === 0 ? 'var(--text-tertiary)' : 'var(--text-primary)' }}
           >
             Previous
           </button>
-          <button type="button" 
-            className="btn btn-primary" 
-            disabled={slide === slides.length - 1} 
-            onClick={() => setSlide(slide + 1)}
+          <button type="button"
+            className="btn btn-primary"
+            disabled={slide === slides.length - 1}
+            onClick={() => setSlide(s => s + 1)}
             style={{ padding: '6px 16px', fontSize: '0.75rem', borderRadius: 'var(--radius-full)' }}
           >
             Next Lesson
@@ -407,12 +419,12 @@ const SkillCard = ({ name, desc, status = 'live' }: { name: string, desc: string
 const SettingsPanel = () => {
   const [hudActive, setHudActive] = useState(true);
   const [premiumActive, setPremiumActive] = useState(true);
-  const [theme, setTheme] = useState(() => localStorage.getItem('openthink_theme') || 'dark');
+  const [theme, setTheme] = useState(() => localStorage.getItem(THEME_KEY) || 'dark');
   const [token, setToken] = useState('cf_ai_••••••••••••••••••••••••');
   const [saved, setSaved] = useState(false);
 
   const handleSave = () => {
-    localStorage.setItem('openthink_theme', theme);
+    localStorage.setItem(THEME_KEY, theme);
     document.body.className = `theme-${theme}`;
     window.dispatchEvent(new Event('storage'));
     setSaved(true);
