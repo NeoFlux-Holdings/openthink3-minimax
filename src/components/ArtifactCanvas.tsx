@@ -212,7 +212,7 @@ const ArtifactCanvas: React.FC<ArtifactCanvasProps> = ({ activeCanvasTab, setAct
         <div style={{ padding: '24px', flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
           {poppedOutTabs[activeTab] ? (
             <div style={{ margin: 'auto', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
-              <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-tertiary)' }}>
+              <div className="artifact-icon-tile">
                 <ExternalLink size={24} />
               </div>
               <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
@@ -245,18 +245,8 @@ const IconButton = ({ icon, active = false, onClick, ariaLabel }: { icon: React.
   <button type="button"
     onClick={onClick}
     aria-label={ariaLabel}
-    className="canvas-icon-button"
+    className="canvas-icon-btn"
     data-active={active}
-    style={{
-      padding: '8px', borderRadius: 'var(--radius-sm)',
-      color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
-      background: active ? 'var(--bg-elevated)' : 'transparent',
-      transition: 'background ease 0.2s, color ease 0.2s, border-color ease 0.2s, transform ease 0.2s, opacity ease 0.2s, box-shadow ease 0.2s',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      minWidth: 40, minHeight: 40, cursor: 'pointer',
-      touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent',
-      border: 'none',
-    }}
   >
     {icon}
   </button>
@@ -308,8 +298,7 @@ const LibraryPanel = () => {
             type="button"
             key={p.title}
             onClick={() => handleFill(p.text)}
-            className="glass-panel"
-            style={{ padding: '14px', borderRadius: '8px', background: 'rgba(36,36,36,0.3)', border: '1px solid var(--border-subtle)', cursor: 'pointer', transition: 'background ease 0.15s, color ease 0.15s, border-color ease 0.15s, transform ease 0.15s, opacity ease 0.15s, box-shadow ease 0.15s', textAlign: 'left', color: 'var(--text-secondary)', font: 'inherit' }}
+            className="glass-panel glass-card glass-card--clickable"
             onFocus={e => { e.currentTarget.style.borderColor = 'var(--accent-secondary)'; e.currentTarget.style.background = 'rgba(255,255,255,0.02)'; }}
             onBlur={e => { e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.06)'; e.currentTarget.style.background = 'rgba(36,36,36,0.3)'; }}
             onMouseOver={e => { e.currentTarget.style.borderColor = 'var(--accent-secondary)'; e.currentTarget.style.background = 'rgba(255,255,255,0.02)'; }}
@@ -348,7 +337,7 @@ const LearningPanel = () => {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', color: 'var(--text-secondary)' }}>
-      <div className="glass-panel" style={{ padding: '20px', borderRadius: '8px', background: 'rgba(36,36,36,0.3)', border: '1px solid var(--border-subtle)', minHeight: '180px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+      <div className="glass-panel glass-card glass-card--tall">
         <div>
           <span style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--accent-primary)', fontWeight: 700 }}>Orange Academy • Slide {slide + 1}/3</span>
           <h4 style={{ margin: '8px 0 12px', color: 'var(--text-primary)', fontSize: '1rem' }}>{slides[slide].title}</h4>
@@ -398,7 +387,7 @@ const SkillsPanel = () => {
 };
 
 const SkillCard = ({ name, desc, status = 'live' }: { name: string, desc: string, status?: 'live' | 'planned' }) => (
-  <div className="glass-panel" style={{ padding: '12px 14px', borderRadius: '8px', background: 'rgba(36,36,36,0.3)', border: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px' }}>
+  <div className="glass-panel glass-card glass-card--md">
     <div style={{ flex: 1 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
         <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'monospace' }}>{name}</span>

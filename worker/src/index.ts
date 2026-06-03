@@ -817,8 +817,14 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
       return jsonResp({ error: "title, head, and non-empty files[] required" }, 400);
     }
     const base = body.base || "main";
-    // 1. Get base SHA
-    const refData = await ghFetch(env, `/repos/${env.GH_REPO}/git/ref/heads/${base}`);
+    // Run everything we can in parallel: base SHA, file SHAs (don't need branch), and branch creation (needs base SHA)
+    const [refData, existingFiles] = await Promise.all([
+      ghFetch(env, `/repos/${env.GH_REPO}/git/ref/heads/${base}`),
+      Promise.all(body.files.map(f =>
+        ghFetch(env, `/repos/${env.GH_REPO}/contents/${encodeURIComponent(f.path)}?ref=${body.head}`)
+          .catch(() => null)
+      )),
+    ]);
     const baseSha = refData.object?.sha;
     if (!baseSha) return jsonResp({ error: `Base branch ${base} not found` }, 404);
     // 2. Create the new branch (idempotent: 422 with "Reference already exists" is fine)
@@ -833,8 +839,8 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
       }
     }
     // 3. Commit each file via the Contents API
-    await Promise.all(body.files.map(async (f) => {
-      const existing = await ghFetch(env, `/repos/${env.GH_REPO}/contents/${encodeURIComponent(f.path)}?ref=${body.head}`).catch(() => null);
+    await Promise.all(body.files.map(async (f, i) => {
+      const existing = existingFiles[i];
       const sha = existing && (existing as any).sha ? (existing as any).sha : undefined;
       return ghFetch(env, `/repos/${env.GH_REPO}/contents/${encodeURIComponent(f.path)}`, {
         method: "PUT",
@@ -851,16 +857,19 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
       method: "POST",
       body: JSON.stringify({ title: body.title, body: body.body || "", head: body.head, base }),
     });
-    await appendHistory(env, {
+    const prNumber = (pr as any).number;
+    const prUrl = (pr as any).html_url;
+    // History append doesn't depend on the PR response - fire and forget
+    void appendHistory(env, {
       id: `pr-${Date.now()}`,
       ts: Date.now(),
       actor: "user",
       type: "pr",
       ok: true,
-      summary: `Opened PR #${(pr as any).number}: ${body.title}`,
-      details: { prNumber: (pr as any).number, url: (pr as any).html_url, head: body.head, base, files: body.files.length },
+      summary: `Opened PR #${prNumber}: ${body.title}`,
+      details: { prNumber, url: prUrl, head: body.head, base, files: body.files.length },
     });
-    return jsonResp({ ok: true, prNumber: (pr as any).number, url: (pr as any).html_url });
+    return jsonResp({ ok: true, prNumber, url: prUrl });
   }
 
   // ── /api/cf/agent/submit — agent evolution: submit a code change as a PR

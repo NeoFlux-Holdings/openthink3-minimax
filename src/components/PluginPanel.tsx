@@ -185,7 +185,7 @@ const PluginPanel: React.FC = () => {
         </div>
         <button type="button"
           onClick={() => setShowAddCommunity(!showAddCommunity)}
-          style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border-subtle)', borderRadius: '6px', padding: '6px 10px', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: '0.75rem' }}
+          className="btn-ghost-sm"
         >
           <Plus size={12} />
           Community Plugin
@@ -207,7 +207,7 @@ const PluginPanel: React.FC = () => {
             <button type="button"
               onClick={addCommunityPlugin}
               disabled={adding}
-              style={{ background: '#EC4899', border: 'none', color: 'white', borderRadius: '6px', padding: '7px 14px', fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer' }}
+              className="btn-solid btn-solid--pink"
             >
               {adding ? <RefreshCw size={12} className="spin" /> : 'Add'}
             </button>
@@ -235,14 +235,7 @@ const PluginPanel: React.FC = () => {
             {/* Plugin header row */}
             <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
               {/* Icon */}
-              <div style={{
-                width: 38, height: 38, borderRadius: '8px',
-                background: `${plugin.iconColor}15`,
-                border: `1px solid ${plugin.iconColor}25`,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                color: plugin.enabled ? plugin.iconColor : 'var(--text-tertiary)',
-                flexShrink: 0, transition: 'background ease 0.2s, color ease 0.2s, border-color ease 0.2s, transform ease 0.2s, opacity ease 0.2s, box-shadow ease 0.2s',
-              }}>
+              <div className="icon-color-tile" style={{ background: `${plugin.iconColor}15`, border: `1px solid ${plugin.iconColor}25`, color: plugin.enabled ? plugin.iconColor : 'var(--text-tertiary)' }}>
                 {plugin.icon}
               </div>
 
@@ -290,7 +283,7 @@ const PluginPanel: React.FC = () => {
                   <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', marginBottom: '5px' }}>Capabilities</div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                     {plugin.skills.map((s) => (
-                      <span key={s} style={{ background: `${plugin.iconColor}08`, border: `1px solid ${plugin.iconColor}20`, color: plugin.iconColor, padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600, fontFamily: s.startsWith('/') ? 'monospace' : 'inherit' }}>{s}</span>
+                      <span key={s} className="plugin-tag" style={{ background: `${plugin.iconColor}08`, border: `1px solid ${plugin.iconColor}20`, color: plugin.iconColor, fontFamily: s.startsWith('/') ? 'monospace' : 'inherit' }}>{s}</span>
                     ))}
                   </div>
                 </div>
@@ -308,7 +301,7 @@ const PluginPanel: React.FC = () => {
                           });
                           setConfigValues(vals);
                         }}
-                        style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border-subtle)', borderRadius: '6px', padding: '6px 10px', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: '0.75rem' }}
+                        className="btn-ghost-sm"
                       >
                         <Settings size={12} /> Configure
                       </button>
@@ -328,7 +321,7 @@ const PluginPanel: React.FC = () => {
                           </div>
                         ))}
                         <div style={{ display: 'flex', gap: '6px', marginTop: '2px' }}>
-                          <button type="button" onClick={() => saveConfig(plugin.id)} style={{ background: plugin.iconColor, border: 'none', color: 'white', borderRadius: '5px', padding: '6px 12px', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}>Save</button>
+                          <button type="button" onClick={() => saveConfig(plugin.id)} className="btn-solid" style={{ background: plugin.iconColor, padding: '6px 12px', borderRadius: '5px' }}>Save</button>
                           <button type="button" onClick={() => setConfiguringId(null)} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-subtle)', color: 'var(--text-tertiary)', borderRadius: '5px', padding: '6px 10px', fontSize: '0.75rem', cursor: 'pointer' }}>Cancel</button>
                         </div>
                       </div>

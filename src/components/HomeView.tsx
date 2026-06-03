@@ -22,26 +22,13 @@ const HomeView: React.FC<HomeViewProps> = ({ onStartThread, recentThreads, onSel
   };
 
   return (
-    <div className="home-view" style={{
-      flex: 1, display: 'flex', flexDirection: 'column',
-      alignItems: 'center', justifyContent: isMobile ? 'flex-start' : 'center',
-      padding: isMobile ? `calc(12px + var(--safe-top)) 16px 16px` : '40px',
-      paddingTop: isMobile ? `calc(12px + var(--safe-top))` : '40px',
-      overflowY: 'auto', WebkitOverflowScrolling: 'touch',
-      position: 'relative',
-    }}>
+    <div className="home-view home-view">
 
       {isMobile && (
         <button type="button"
           onClick={onOpenMenu}
           aria-label="Open menu"
-          style={{
-            position: 'absolute', top: 'calc(8px + var(--safe-top))', left: 8,
-            width: 40, height: 40, borderRadius: '50%',
-            background: 'transparent', border: 'none',
-            color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            cursor: 'pointer', touchAction: 'manipulation',
-          }}
+          className="icon-btn-circle"
         >
           <Menu size={20} />
         </button>
@@ -76,14 +63,7 @@ const HomeView: React.FC<HomeViewProps> = ({ onStartThread, recentThreads, onSel
                     key={mode}
                     type="button"
                     onClick={() => setTaskMode(mode)}
-                    style={{
-                      padding: '4px 12px', fontSize: '0.75rem', fontWeight: 600,
-                      borderRadius: 'var(--radius-full)',
-                      background: taskMode === mode ? 'var(--bg-primary)' : 'transparent',
-                      color: taskMode === mode ? 'var(--text-primary)' : 'var(--text-secondary)',
-                      boxShadow: taskMode === mode ? 'var(--shadow-sm)' : 'none',
-                      transition: 'background ease 0.2s, color ease 0.2s, border-color ease 0.2s, transform ease 0.2s, opacity ease 0.2s, box-shadow ease 0.2s'
-                    }}
+                    className="mode-tab" data-active={taskMode === mode}
                   >
                     {mode}
                   </button>
@@ -139,11 +119,10 @@ const HomeView: React.FC<HomeViewProps> = ({ onStartThread, recentThreads, onSel
                   type="button"
                   key={thread.id}
                   onClick={() => onSelectThread(thread.id)}
-                  className="glass-panel thread-card"
-                  style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', cursor: 'pointer', transition: 'transform 0.2s, border-color 0.2s', minHeight: 64, color: 'var(--text-primary)', textAlign: 'left', background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}
+                  className="glass-panel thread-card thread-card"
                 >
                   <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                    <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: 'var(--bg-elevated)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <div className="thread-card-icon">
                       <ImageIcon size={20} color="var(--text-tertiary)" />
                     </div>
                     <div style={{ minWidth: 0, flex: 1 }}>
@@ -164,15 +143,7 @@ const HomeView: React.FC<HomeViewProps> = ({ onStartThread, recentThreads, onSel
 const QuickAction = ({ icon, label, onClick }: { icon: React.ReactNode, label: string, onClick: () => void }) => (
   <button type="button"
     onClick={onClick}
-    className="quick-action"
-    style={{
-      display: 'flex', alignItems: 'center', gap: '8px',
-      padding: '10px 16px', background: 'rgba(255, 255, 255, 0.05)',
-      border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-full)',
-      fontSize: '0.875rem', color: 'var(--text-secondary)',
-      transition: 'background ease 0.2s, color ease 0.2s, border-color ease 0.2s, transform ease 0.2s, opacity ease 0.2s, box-shadow ease 0.2s', minHeight: 44,
-      cursor: 'pointer', touchAction: 'manipulation',
-    }}
+    className="quick-action quick-action"
   >
     {icon} {label}
   </button>

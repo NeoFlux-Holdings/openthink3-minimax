@@ -55,19 +55,7 @@ export function SideDrawer({ open, onClose, children, ariaLabel = 'Menu' }: Side
           <button type="button"
             onClick={onClose}
             aria-label="Close menu"
-            style={{
-              width: 40,
-              height: 40,
-              borderRadius: '50%',
-              background: 'transparent',
-              border: 'none',
-              color: 'var(--text-secondary)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              touchAction: 'manipulation',
-            }}
+            className="icon-btn-circle"
           >
             <X size={20} />
           </button>

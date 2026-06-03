@@ -7,15 +7,7 @@ const MarketingView = () => {
     <div style={{ minHeight: '100dvh', overflowY: 'auto', background: 'var(--bg-primary)', display: 'flex', flexDirection: 'column' }}>
 
       {/* Navbar */}
-      <nav style={{
-        padding: 'max(16px, env(safe-area-inset-top)) 20px 16px',
-        paddingTop: 'max(16px, env(safe-area-inset-top))',
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        borderBottom: '1px solid var(--border-subtle)',
-        background: 'rgba(10, 10, 10, 0.8)',
-        backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
-        position: 'sticky', top: 0, zIndex: 50, gap: 12, flexWrap: 'wrap',
-      }}>
+      <nav className="sticky-navbar">
         <div className="row-flex-gap-12">
           <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-tertiary))', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Bot size={20} color="white" />
@@ -36,10 +28,10 @@ const MarketingView = () => {
       <section className="marketing-hero" style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '24px', position: 'relative' }}>
 
         {/* Background glow */}
-        <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: 'min(600px, 90vw)', height: 'min(600px, 90vw)', background: 'radial-gradient(circle, rgba(139, 92, 246, 0.15) 0%, transparent 70%)', zIndex: 0, pointerEvents: 'none' }} />
+        <div className="marketing-glow" />
 
         <div style={{ zIndex: 1, maxWidth: '800px', width: '100%' }}>
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: 'rgba(59, 130, 246, 0.1)', color: '#3B82F6', padding: '6px 16px', borderRadius: 'var(--radius-full)', fontSize: '0.875rem', fontWeight: 600, marginBottom: '20px' }}>
+          <div className="pill-info">
             <Zap size={14} fill="currentColor" /> Powered by Cloudflare Workers AI
           </div>
           <h1 className="marketing-h1" style={{ lineHeight: 1.1, marginBottom: '20px', color: 'var(--text-primary)' }}>

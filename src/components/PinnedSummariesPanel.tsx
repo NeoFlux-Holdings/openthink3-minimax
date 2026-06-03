@@ -60,28 +60,9 @@ const PinnedSummariesPanel = ({ isPoppedOut = false, onClose }: { isPoppedOut?: 
   };
 
   return (
-    <div style={{
-      height: '100%',
-      display: 'flex',
-      flexDirection: 'column',
-      background: 'var(--bg-primary)',
-      padding: 0,
-      color: 'var(--text-primary)',
-      fontFamily: "'Inter', sans-serif",
-      overflowY: 'auto',
-      WebkitOverflowScrolling: 'touch',
-    }}>
+    <div className="page-wrapper--pinned">
       {/* Header */}
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        marginBottom: '20px', paddingBottom: '12px',
-        borderBottom: '1px solid var(--border-subtle)',
-        paddingTop: 'env(safe-area-inset-top)',
-        padding: '16px 20px 12px',
-        position: 'sticky', top: 0, zIndex: 2,
-        background: 'var(--bg-primary)',
-        borderRadius: '20px 20px 0 0',
-      }}>
+      <div className="sticky-panel-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Pin size={16} color="white" />
@@ -100,10 +81,9 @@ const PinnedSummariesPanel = ({ isPoppedOut = false, onClose }: { isPoppedOut?: 
 
         {onClose && !isPoppedOut && (
           <button type="button"
-            className="btn btn-ghost"
+            className="icon-btn-min-square"
             onClick={onClose}
             aria-label="Close"
-            style={{ minWidth: 40, minHeight: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', background: 'transparent', cursor: 'pointer' }}
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
           </button>
@@ -132,7 +112,7 @@ const PinnedSummariesPanel = ({ isPoppedOut = false, onClose }: { isPoppedOut?: 
                   type="button"
                   aria-expanded={isExpanded}
                   onClick={() => setExpandedId(isExpanded ? null : item.id)}
-                  style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', cursor: 'pointer', flex: 1, background: 'transparent', border: 'none', padding: 0, textAlign: 'left', color: 'inherit', minWidth: 0 }}
+                  className="summary-title"
                 >
                   <span style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--accent-secondary)', fontWeight: 700, letterSpacing: '0.05em' }}>
                     {item.category}
@@ -148,7 +128,7 @@ const PinnedSummariesPanel = ({ isPoppedOut = false, onClose }: { isPoppedOut?: 
                       handleCopy(item);
                     }}
                     aria-label={copiedId === item.id ? 'Copied' : 'Copy summary'}
-                    style={{ color: copiedId === item.id ? '#10B981' : 'var(--text-tertiary)', background: 'transparent', border: 'none', cursor: 'pointer', padding: '8px', minWidth: 40, minHeight: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', touchAction: 'manipulation' }}
+                    className="copy-btn" data-copied={copiedId === item.id}
                   >
                     {copiedId === item.id ? <Check size={14} /> : <Copy size={14} />}
                   </button>

@@ -12,7 +12,7 @@ interface MobileSheetProps {
   accentColor?: string;
 }
 
-export function MobileSheet({ open, onClose, title, children, icon, accentColor }: MobileSheetProps) {
+export function MobileSheet({ open, onClose, title, children, icon }: MobileSheetProps) {
   const ref = useRef<HTMLDialogElement>(null);
   const onCloseEvent = useEffectEvent(onClose);
   useEffect(() => {
@@ -67,19 +67,7 @@ export function MobileSheet({ open, onClose, title, children, icon, accentColor 
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
             {icon && (
               <div
-                style={{
-                  width: '28px',
-                  height: '28px',
-                  borderRadius: '6px',
-                  background: accentColor
-                    ? `linear-gradient(135deg, ${accentColor}, var(--accent-secondary))`
-                    : 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: 'white',
-                  flexShrink: 0,
-                }}
+                className="icon-badge"
               >
                 {icon}
               </div>
@@ -101,20 +89,7 @@ export function MobileSheet({ open, onClose, title, children, icon, accentColor 
           <button type="button"
             onClick={onClose}
             aria-label="Close"
-            style={{
-              width: '36px',
-              height: '36px',
-              borderRadius: '50%',
-              background: 'transparent',
-              border: 'none',
-              color: 'var(--text-secondary)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              touchAction: 'manipulation',
-              flexShrink: 0,
-            }}
+            className="icon-btn-circle icon-btn-circle--36"
           >
             <X size={18} />
           </button>

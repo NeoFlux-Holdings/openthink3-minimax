@@ -97,12 +97,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 <button type="button"
                   onClick={onCloseDrawer}
                   aria-label="Close menu"
-                  style={{
-                    background: 'transparent', border: 'none', color: 'var(--text-tertiary)',
-                    cursor: 'pointer', padding: '8px', minWidth: 40, minHeight: 40,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    touchAction: 'manipulation',
-                  }}
+                  className="icon-btn-min-square icon-btn-circle--square-pad"
                 >
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                 </button>
@@ -126,7 +121,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 
           {/* Pinned Summaries Collapsible & Pop-out Section */}
           <div style={{ marginBottom: '24px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-tertiary)', letterSpacing: '0.05em', fontWeight: 600, padding: '4px 8px', marginBottom: '8px', userSelect: 'none', borderRadius: 4 }}>
+            <div className="section-label--sticky">
               <button
                 type="button"
                 aria-expanded={isSummariesExpanded}
@@ -144,7 +139,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                   type="button"
                   onClick={(e) => { e.stopPropagation(); handlePopOutSummaries(e as unknown as React.MouseEvent); }}
                   aria-label="Pop out pinned summaries"
-                  style={{ color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', background: 'transparent', border: 'none', padding: 2, marginLeft: 6, cursor: 'pointer' }}
+                  className="row-icon-text--pop"
                 >
                   <ExternalLink size={10} />
                 </button>
@@ -216,18 +211,6 @@ const SidebarItem = ({ icon, label, badge, isSub = false, isActive = false, onCl
     onClick={onClick}
     className="sidebar-item"
     data-active={isActive ? 'true' : undefined}
-    style={{
-      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      padding: '8px 12px', borderRadius: 'var(--radius-sm)',
-      background: isActive ? 'var(--bg-elevated)' : 'transparent',
-      color: isActive ? 'var(--text-primary)' : isSub ? 'var(--text-secondary)' : 'var(--text-primary)',
-      fontSize: isSub ? '0.8125rem' : '0.875rem',
-      width: '100%', textAlign: 'left',
-      transition: 'background 0.15s',
-      minHeight: 40,
-      border: 'none',
-      cursor: 'pointer',
-    }}
   >
     <div className="row-flex-gap-12">
       <span style={{ color: isActive ? 'var(--accent-primary)' : isSub ? 'var(--text-tertiary)' : 'inherit', display: 'flex', alignItems: 'center', flexShrink: 0 }}>{icon}</span>

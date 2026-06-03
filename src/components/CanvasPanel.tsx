@@ -132,20 +132,7 @@ const CanvasPanel: React.FC<CanvasPanelProps> = ({ isPoppedOut = false }) => {
         <textarea
           value={notepad}
           onChange={e => handleNotepadChange(e.target.value)}
-          className="focus-ring"
-          style={{
-            flex: 1,
-            width: '100%',
-            background: 'var(--bg-tertiary)',
-            border: '1px solid var(--border-subtle)',
-            borderRadius: '6px',
-            padding: '12px',
-            color: 'var(--text-primary)',
-            fontFamily: 'monospace',
-            fontSize: '0.8rem',
-            lineHeight: 1.5,
-            resize: 'none'
-          }}
+          className="focus-ring code-textarea"
           placeholder="// Type custom developer notes to sync instantly across popped-out tabs..."
          aria-label="Canvas prompt input" />
       </div>

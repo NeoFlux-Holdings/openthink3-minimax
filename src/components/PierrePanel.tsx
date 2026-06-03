@@ -201,11 +201,11 @@ const PierrePanel = ({ isPoppedOut = false }: { isPoppedOut?: boolean }) => {
       </div>
 
       {/* Terminal Logs */}
-      <div className="glass-panel" style={{ flex: 1, padding: '12px', borderRadius: 'var(--radius-md)', background: 'black', border: '1px solid var(--border-strong)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#10B981', fontSize: '0.75rem', fontFamily: 'monospace', borderBottom: '1px solid #10B981', paddingBottom: '6px', marginBottom: '8px' }}>
+      <div className="glass-panel terminal-panel">
+        <div className="status-label">
           <Terminal size={14} /> PIERRE HARNESS TERMINAL
         </div>
-        <div style={{ flex: 1, overflowY: 'auto', fontFamily: 'monospace', fontSize: '0.75rem', color: '#10B981', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+        <div className="status-log-body">
           {logs.map((log) => (
             <div key={`log-${log.slice(0, 20)}`} style={{ lineBreak: 'anywhere' }}>
               <span style={{ color: '#6B7280' }}>$</span> {log}

@@ -239,13 +239,6 @@ const AppView = () => {
       {isMobile && mobileTab === 'account' && (
         <div
           className="mobile-fullscreen-pane"
-          style={{
-            position: 'fixed', inset: 0, zIndex: 150,
-            background: 'var(--bg-primary)',
-            paddingTop: 'env(safe-area-inset-top)',
-            paddingBottom: 'calc(var(--mobile-bottom-bar) + env(safe-area-inset-bottom))',
-            overflowY: 'auto', WebkitOverflowScrolling: 'touch',
-          }}
         >
           <AccountHub isStandalone />
         </div>

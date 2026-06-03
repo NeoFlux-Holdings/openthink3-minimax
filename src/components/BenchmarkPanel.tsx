@@ -195,7 +195,7 @@ const BenchmarkPanel: React.FC = () => {
             <button type="button" onClick={fetchLatest} disabled={loading} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border-subtle)', borderRadius: '6px', padding: '5px 8px', cursor: 'pointer', color: 'var(--text-tertiary)', display: 'flex' }}>
               <RefreshCw size={12} className={loading ? 'spin' : ''} />
             </button>
-            <a href="https://github.com/garrytan/gbrain-evals" target="_blank" rel="noreferrer" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border-subtle)', borderRadius: '6px', padding: '5px 8px', cursor: 'pointer', color: 'var(--text-tertiary)', display: 'flex', textDecoration: 'none' }}>
+            <a href="https://github.com/garrytan/gbrain-evals" target="_blank" rel="noreferrer" className="btn-ghost-sm btn-ghost-sm--pad5">
               <ExternalLink size={12} />
             </a>
           </div>
@@ -257,7 +257,7 @@ const BenchmarkPanel: React.FC = () => {
         )}
 
         {evalLogs.length > 0 && (
-          <div style={{ background: '#09090D', borderRadius: '7px', padding: '10px 12px', maxHeight: '160px', overflowY: 'auto', fontFamily: 'monospace', fontSize: '0.75rem', lineHeight: 1.6 }}>
+          <div className="code-log">
             {evalLogs.map((l) => (
               <div key={`eval-${l.slice(0, 20)}`} style={{ color: l.startsWith('✅') ? '#10B981' : l.startsWith('⚠️') ? '#F59E0B' : '#A1A1AA' }}>{l}</div>
             ))}
@@ -270,7 +270,7 @@ const BenchmarkPanel: React.FC = () => {
       <div style={panel}>
         <button type="button"
           onClick={() => setShowHistory(!showHistory)}
-          style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: 0, justifyContent: 'space-between' }}
+          className="collapse-toggle"
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <TrendingUp size={14} color="var(--accent-secondary)" />
@@ -309,7 +309,7 @@ const BenchmarkPanel: React.FC = () => {
       <div style={panel}>
         <button type="button"
           onClick={() => setShowComparison(!showComparison)}
-          style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: 0, justifyContent: 'space-between' }}
+          className="collapse-toggle"
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <BarChart2 size={14} color="#8B5CF6" />

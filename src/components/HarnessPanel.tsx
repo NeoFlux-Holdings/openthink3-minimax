@@ -142,15 +142,7 @@ const HarnessPanel: React.FC<HarnessPanelProps> = ({ isPoppedOut = false, select
             <button type="button"
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              style={{
-                flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px',
-                padding: '6px 4px', borderRadius: '6px', border: 'none', cursor: 'pointer',
-                fontSize: '0.75rem', fontWeight: isActive ? 700 : 500,
-                transition: 'background ease 0.15s, color ease 0.15s, border-color ease 0.15s, transform ease 0.15s, opacity ease 0.15s, box-shadow ease 0.15s',
-                background: isActive ? (tab.color ? `${tab.color}15` : 'rgba(255,255,255,0.07)') : 'transparent',
-                color: isActive ? (tab.color || 'var(--text-primary)') : 'var(--text-tertiary)',
-                boxShadow: isActive ? `inset 0 0 0 1px ${tab.color ? `${tab.color}30` : 'rgba(255,255,255,0.1)'}` : 'none',
-              }}
+              className="harness-tab-btn" data-active={isActive} style={{ color: isActive ? (tab.color || 'var(--text-primary)') : 'var(--text-tertiary)', background: isActive ? (tab.color ? `${tab.color}15` : 'rgba(255,255,255,0.07)') : 'transparent', boxShadow: isActive ? `inset 0 0 0 1px ${tab.color ? `${tab.color}30` : 'rgba(255,255,255,0.1)'}` : 'none' }}
             >
               {tab.icon}
               {tab.label}
@@ -195,23 +187,7 @@ const HarnessPanel: React.FC<HarnessPanelProps> = ({ isPoppedOut = false, select
                     e.currentTarget.style.transform = 'translateY(0)';
                   }
                 }}
-                style={{
-                  padding: '14px',
-                  borderRadius: '8px',
-                  background: isSelected ? 'rgba(255, 255, 255, 0.04)' : 'rgba(255, 255, 255, 0.01)',
-                  border: isSelected ? '1.5px solid var(--accent-primary)' : '1px solid rgba(255, 255, 255, 0.06)',
-                  cursor: 'pointer',
-                  transition: 'background cubic-bezier(0.4, 0, 0.2, 1) 0.2s, color cubic-bezier(0.4, 0, 0.2, 1) 0.2s, border-color cubic-bezier(0.4, 0, 0.2, 1) 0.2s, transform cubic-bezier(0.4, 0, 0.2, 1) 0.2s, opacity cubic-bezier(0.4, 0, 0.2, 1) 0.2s, box-shadow cubic-bezier(0.4, 0, 0.2, 1) 0.2s',
-                  boxShadow: isSelected ? '0 0 16px rgba(249, 115, 22, 0.15)' : 'none',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '6px',
-                  position: 'relative',
-                  overflow: 'hidden',
-                  textAlign: 'left',
-                  color: 'inherit',
-                  font: 'inherit'
-                }}
+                className="model-card" data-selected={isSelected}
                 onMouseOver={e => {
                   if (!isSelected) {
                     e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)';
@@ -226,14 +202,7 @@ const HarnessPanel: React.FC<HarnessPanelProps> = ({ isPoppedOut = false, select
                 }}
               >
                 {/* Custom Card Gradient Overlay */}
-                <div style={{
-                  position: 'absolute',
-                  top: 0, left: 0, right: 0, bottom: 0,
-                  background: model.gradient,
-                  opacity: isSelected ? 0.8 : 0.2,
-                  zIndex: 0,
-                  pointerEvents: 'none'
-                }} />
+                <div className="gradient-overlay" data-selected={isSelected} />
 
                 <div style={{ zIndex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: '0.9rem', fontWeight: 700, color: isSelected ? 'var(--text-primary)' : 'var(--text-secondary)' }}>

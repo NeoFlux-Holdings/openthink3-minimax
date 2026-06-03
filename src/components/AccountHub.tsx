@@ -46,8 +46,8 @@ const AccountHub: React.FC<AccountHubProps> = ({ isStandalone = false }) => {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', fontFamily: "'Inter', sans-serif" }}>
 
       {/* Active Developer Profile */}
-      <div className="glass-panel" style={{ padding: '20px', borderRadius: '12px', background: 'rgba(36,36,36,0.3)', border: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center', gap: '16px' }}>
-        <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: '1.2rem' }}>
+      <div className="glass-panel glass-card glass-card--pad20" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <div className="icon-badge--48">
           T
         </div>
         <div>
@@ -210,16 +210,7 @@ const AccountHub: React.FC<AccountHubProps> = ({ isStandalone = false }) => {
 
   if (isStandalone) {
     return (
-      <div style={{
-        minHeight: '100vh',
-        width: '100vw',
-        background: 'radial-gradient(circle at top left, var(--bg-secondary), var(--bg-primary))',
-        color: 'var(--text-primary)',
-        padding: '32px 24px',
-        display: 'flex',
-        justifyContent: 'center',
-        overflowY: 'auto',
-      }}>
+      <div className="page-wrapper">
         <div style={{ maxWidth: '650px', width: '100%' }}>
           {/* Standalone Header */}
           <div className="row-flex-gap-12">

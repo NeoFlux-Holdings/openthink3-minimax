@@ -20,22 +20,7 @@ export function BottomTabBar({ active, onChange, onNewThread, onOpenMenu }: Bott
   return (
     <nav
       aria-label="Primary"
-      style={{
-        position: 'fixed',
-        left: 0,
-        right: 0,
-        bottom: 0,
-        zIndex: 200,
-        background: 'var(--bg-elevated)',
-        borderTop: '1px solid var(--border-subtle)',
-        paddingBottom: 'env(safe-area-inset-bottom, 0px)',
-        backdropFilter: 'blur(8px)',
-        WebkitBackdropFilter: 'blur(8px)',
-        boxShadow: '0 -2px 16px rgba(0, 0, 0, 0.3)',
-        display: 'flex',
-        alignItems: 'stretch',
-        justifyContent: 'space-around',
-      }}
+      className="bottom-tab-bar"
     >
       <TabButton
         label="Menu"
@@ -88,23 +73,7 @@ function TabButton({ label, onClick, isActive, children, leadingDots, accent }: 
       onClick={onClick}
       aria-label={label}
       aria-current={isActive ? 'page' : undefined}
-      style={{
-        flex: 1,
-        minHeight: 56,
-        background: 'transparent',
-        border: 'none',
-        color: isActive ? 'var(--accent-primary)' : 'var(--text-tertiary)',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 4,
-        cursor: 'pointer',
-        touchAction: 'manipulation',
-        WebkitTapHighlightColor: 'transparent',
-        padding: '6px 0',
-        position: 'relative',
-      }}
+      className="tab-btn" data-active={isActive}
     >
       {leadingDots ? (
         <span style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'center' }}>
@@ -114,17 +83,7 @@ function TabButton({ label, onClick, isActive, children, leadingDots, accent }: 
         </span>
       ) : accent ? (
         <span
-          style={{
-            width: 40,
-            height: 40,
-            borderRadius: '50%',
-            background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.35)',
-            marginTop: -8,
-          }}
+          className="tab-btn-accent"
         >
           {children}
         </span>
@@ -143,16 +102,7 @@ function TabButton({ label, onClick, isActive, children, leadingDots, accent }: 
       </span>
       {isActive && !leadingDots && !accent && (
         <span
-          style={{
-            position: 'absolute',
-            top: 4,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            width: 18,
-            height: 2,
-            borderRadius: 1,
-            background: 'var(--accent-primary)',
-          }}
+          className="tab-indicator"
         />
       )}
     </button>

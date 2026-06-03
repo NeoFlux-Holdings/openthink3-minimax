@@ -366,17 +366,12 @@ export default function CloudflareSyncPanel({ apiBase }: CloudflareSyncPanelProp
       {/* History (last 5) */}
       {history.length > 0 && (
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.75rem', color: 'var(--text-tertiary)', textTransform: 'uppercase', fontWeight: 700, marginBottom: 8 }}>
+          <div className="section-label--activity">
             <History size={12} /> Recent Activity
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {history.slice(0, 5).map((h) => (
-              <div key={h.id} style={{
-                display: 'flex', alignItems: 'center', gap: 10,
-                fontSize: '0.78rem', color: 'var(--text-secondary)',
-                padding: '6px 10px', background: 'rgba(255,255,255,0.02)', borderRadius: 6,
-                border: '1px solid var(--border-subtle)',
-              }}>
+              <div key={h.id} className="pill-history-row">
                 {h.type === 'deploy' && <Cpu size={12} color={h.ok ? '#10B981' : '#EF4444'} />}
                 {h.type === 'pr' && <GitPullRequest size={12} color={h.ok ? '#10B981' : '#EF4444'} />}
                 {h.type === 'stage' && <Package size={12} color={h.ok ? '#F59E0B' : '#EF4444'} />}
@@ -391,7 +386,7 @@ export default function CloudflareSyncPanel({ apiBase }: CloudflareSyncPanelProp
 
       {/* Activity log + errors */}
       {(log.length > 0 || error) && (
-        <div style={{ background: 'rgba(0,0,0,0.3)', borderRadius: 6, padding: 10, fontFamily: 'monospace', fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <div className="code-log--black">
           {log.map((l) => (
             <div key={`log-${l.slice(0, 20)}`} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <Terminal size={10} color="var(--text-tertiary)" /> {l}
