@@ -110,7 +110,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           </button>
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '24px' }}>
-            <SidebarItem icon={<Search size={18} />} label="Search" isActive={activeCanvasTab === 'library'} onClick={() => onSelectCanvasTab?.('library')} />
+            <SidebarItem icon={<Search size={18} />} label="Search" isActive={false} onClick={() => onSelectCanvasTab?.('library')} />
             <SidebarItem icon={<Library size={18} />} label="Library" isActive={activeCanvasTab === 'library'} onClick={() => onSelectCanvasTab?.('library')} />
             <SidebarItem icon={<Brain size={18} />} label="Learning" badge="3" isActive={activeCanvasTab === 'learning'} onClick={() => onSelectCanvasTab?.('learning')} />
             <SidebarItem icon={<Zap size={18} />} label="Skills" isActive={activeCanvasTab === 'skills'} onClick={() => onSelectCanvasTab?.('skills')} />
@@ -198,7 +198,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
             <SidebarItem icon={<User size={18} />} label="Account" isActive={activeCanvasTab === 'account'} onClick={() => onSelectCanvasTab?.('account')} />
             <SidebarItem icon={<Settings size={18} />} label="Settings" isActive={activeCanvasTab === 'settings'} onClick={() => onSelectCanvasTab?.('settings')} />
-            <SidebarItem icon={<HelpCircle size={18} />} label="Help" isActive={activeCanvasTab === 'learning'} onClick={() => onSelectCanvasTab?.('learning')} />
+            <SidebarItem icon={<HelpCircle size={18} />} label="Help" isActive={false} onClick={() => onSelectCanvasTab?.('learning')} />
           </div>
         </div>
       )}
