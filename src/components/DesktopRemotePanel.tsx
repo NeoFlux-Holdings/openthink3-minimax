@@ -2,30 +2,14 @@ import React, { useState, useEffect, useSyncExternalStore } from 'react';
 import { Cpu, AlertCircle, RefreshCw } from 'lucide-react';
 import {
   TunnelControl, ServiceList, McpBridge, LocalAgentRunner, ConsoleLog,
-  PANEL_STYLE, ROW_STYLE,
-  type LocalService, type AgentStatus,
 } from './DesktopRemotePanelParts';
+import {
+  type LocalService,
+  PANEL_STYLE, ROW_STYLE,
+  subscribeAgent, getAgentStatus, getAgentServerStatus, setAgentStatus,
+} from './DesktopRemotePanel.types';
 
 const CUSTOM_DOMAIN_KEY = 'openthink_custom_domain';
-
-let agentStatus: AgentStatus = 'checking';
-const agentListeners = new Set<() => void>();
-const setAgentStatus = (s: AgentStatus) => {
-  if (agentStatus === s) return;
-  agentStatus = s;
-  agentListeners.forEach(l => l());
-};
-const subscribeAgent = (cb: () => void) => {
-  agentListeners.add(cb);
-  if (agentListeners.size === 1) {
-    fetch('http://127.0.0.1:8787')
-      .then(r => setAgentStatus(r.ok ? 'live' : 'offline'))
-      .catch(() => setAgentStatus('offline'));
-  }
-  return () => { agentListeners.delete(cb); };
-};
-const getAgentStatus = (): AgentStatus => agentStatus;
-const getAgentServerStatus = (): AgentStatus => 'offline';
 
 const DesktopRemotePanel: React.FC = () => {
   const [tunnelActive, setTunnelActive] = useState(false);

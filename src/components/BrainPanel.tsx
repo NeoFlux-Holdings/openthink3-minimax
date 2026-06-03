@@ -3,7 +3,7 @@ import {
   BrainStatusCard, SkillsToggleCard, MemorySearchCard,
   IngestCard, DreamCycleCard, GstackReferenceCard,
 } from './BrainPanelParts';
-import type { BrainStatus, SearchResult } from './BrainPanelParts';
+import type { BrainStatus, SearchResult } from './BrainPanel.types';
 
 const getApiUrl = () => {
   const custom = localStorage.getItem('openthink_api_url');

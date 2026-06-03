@@ -142,12 +142,11 @@ export default function CloudflareSyncPanel({ apiBase }: CloudflareSyncPanelProp
     return stored ? [`Last pull: ${relTime(parseInt(stored, 10))}`] : [];
   });
   const [error, setError] = useState<string | null>(null);
-  const showError = (e: string | null) => setError(e);
 
   const append = (s: string) => setLog(l => [...l, s]);
 
   const refreshAll = useCallback(async () => {
-    showError(null);
+    setError(null);
     try {
       const [s, m, h, b] = await Promise.all([
         api('/api/cf/status', {}, base),
@@ -161,7 +160,7 @@ export default function CloudflareSyncPanel({ apiBase }: CloudflareSyncPanelProp
       setHistory(h.history || []);
       setLocalMeta(b);
     } catch (e: any) {
-      showError(e.message || String(e));
+      setError(e.message || String(e));
     }
   }, [base]);
 
@@ -170,7 +169,7 @@ export default function CloudflareSyncPanel({ apiBase }: CloudflareSyncPanelProp
   /* ── Pull: download the remote worker bundle + refresh manifest ── */
   const handlePull = async () => {
     setBusy('pull');
-    showError(null);
+    setError(null);
     try {
       const r = await fetch(`${base}/api/cf/bundle/worker`);
       if (!r.ok) {
@@ -188,7 +187,7 @@ export default function CloudflareSyncPanel({ apiBase }: CloudflareSyncPanelProp
       append(`Pulled remote bundle (${fmtBytes(code.length)}, sha ${shortSha(meta.sha256)})`);
       await refreshAll();
     } catch (e: any) {
-      showError(e.message || String(e));
+      setError(e.message || String(e));
     } finally {
       setBusy(null);
     }
@@ -197,7 +196,7 @@ export default function CloudflareSyncPanel({ apiBase }: CloudflareSyncPanelProp
   /* ── Push: fetch local bundle, stage, then deploy ── */
   const handlePush = async () => {
     setBusy('push');
-    showError(null);
+    setError(null);
     try {
       append('Reading local worker-bundle.js…');
       const r = await fetch('/worker-bundle.js');
@@ -226,7 +225,7 @@ export default function CloudflareSyncPanel({ apiBase }: CloudflareSyncPanelProp
       localStorage.setItem(LSK.lastPushTs, String(Date.now()));
       await refreshAll();
     } catch (e: any) {
-      showError(e.message || String(e));
+      setError(e.message || String(e));
     } finally {
       setBusy(null);
     }
@@ -235,7 +234,7 @@ export default function CloudflareSyncPanel({ apiBase }: CloudflareSyncPanelProp
   /* ── Agent PR: open a GitHub PR for self-evolution ── */
   const handleAgentPR = async () => {
     setBusy('pr');
-    showError(null);
+    setError(null);
     try {
       if (!status?.configured.GH_TOKEN) throw new Error('GH_TOKEN not configured on worker');
       if (!status?.configured.GH_REPO) throw new Error('GH_REPO not configured on worker');
@@ -256,7 +255,7 @@ export default function CloudflareSyncPanel({ apiBase }: CloudflareSyncPanelProp
       append(`PR opened ✓ (#${r.prNumber}: ${r.url})`);
       await refreshAll();
     } catch (e: any) {
-      showError(e.message || String(e));
+      setError(e.message || String(e));
     } finally {
       setBusy(null);
     }

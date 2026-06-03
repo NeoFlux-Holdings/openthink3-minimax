@@ -36,17 +36,23 @@ const ThreadFeed: React.FC<ThreadFeedProps> = ({ threadId, initialPrompt, thread
   const [apiError, setApiError] = useState<string | null>(null);
   const navigate = useNavigate();
 
-  const [input, setInput] = useState(() => {
-    return localStorage.getItem(`openthink_draft_input_${threadId}`) || '';
-  });
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  const handleInputChange = (value: string) => {
-    setInput(value);
+  const getInput = () => inputRef.current?.value ?? '';
+  const handleInputChange = () => {
+    const value = getInput();
     localStorage.setItem(`openthink_draft_input_${threadId}`, value);
   };
   const [pendingCount, setPendingCount] = useState(0);
   const isLoading = pendingCount > 0;
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const stored = localStorage.getItem(`openthink_draft_input_${threadId}`);
+    if (stored && inputRef.current) {
+      inputRef.current.value = stored;
+    }
+  }, [threadId]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -99,10 +105,10 @@ const ThreadFeed: React.FC<ThreadFeedProps> = ({ threadId, initialPrompt, thread
   }, [initialPrompt]);
 
   const handleSend = async (overrideInput?: string) => {
-    const userMsg = overrideInput || input;
+    const userMsg = overrideInput || getInput();
     if (!userMsg.trim() || isLoading) return;
 
-    setInput('');
+    if (inputRef.current) inputRef.current.value = '';
     localStorage.removeItem(`openthink_draft_input_${threadId}`);
     setPendingCount(c => c + 1);
 
@@ -255,7 +261,7 @@ const ThreadFeed: React.FC<ThreadFeedProps> = ({ threadId, initialPrompt, thread
 
       <Composer
         isLoading={isLoading}
-        input={input}
+        inputRef={inputRef}
         onInputChange={handleInputChange}
         onSend={() => handleSend()}
       />

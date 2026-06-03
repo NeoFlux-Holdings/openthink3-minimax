@@ -39,10 +39,10 @@ export const ThreadHeader: React.FC<{
 
 export const Composer: React.FC<{
   isLoading: boolean;
-  input: string;
-  onInputChange: (v: string) => void;
+  inputRef: React.RefObject<HTMLTextAreaElement | null>;
+  onInputChange: () => void;
   onSend: () => void;
-}> = ({ isLoading, input, onInputChange, onSend }) => (
+}> = ({ isLoading, inputRef, onInputChange, onSend }) => (
   <div className="composer-wrapper">
     <div className="glass-panel composer-bar">
       <button type="button"
@@ -52,11 +52,11 @@ export const Composer: React.FC<{
         <PaperclipIcon />
       </button>
       <textarea
+        ref={inputRef}
         className="input-field composer-input"
         placeholder="Reply to agent..."
         aria-label="Reply to agent"
-        value={input}
-        onChange={e => onInputChange(e.target.value)}
+        onChange={onInputChange}
         onKeyDown={e => {
           if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
@@ -69,9 +69,9 @@ export const Composer: React.FC<{
       <button type="button"
         className="btn-primary send-btn"
         onClick={onSend}
-        disabled={isLoading || !input.trim()}
+        disabled={isLoading}
         aria-label="Send message"
-        style={{ opacity: (isLoading || !input.trim()) ? 0.5 : 1 }}
+        style={{ opacity: isLoading ? 0.5 : 1 }}
       >
         <SendIcon />
       </button>

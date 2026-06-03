@@ -1,64 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import {
-  Monitor, Play, Square, Globe, Shield,
-  ToggleLeft, ToggleRight, Plus, X,
-  Zap, GitFork, RefreshCw, ChevronDown, ChevronUp, Terminal
-} from 'lucide-react';
-
-export type AgentStatus = 'checking' | 'live' | 'offline';
-
-export interface LocalService {
-  id: string;
-  name: string;
-  subdomain: string;
-  localPort: number;
-  active: boolean;
-  type: 'Codex' | 'Claude MCP' | 'Ollama' | 'Custom';
-}
-
-export const PANEL_STYLE: React.CSSProperties = {
-  background: 'rgba(255,255,255,0.02)',
-  border: '1px solid var(--border-subtle)',
-  borderRadius: '10px',
-  padding: '16px',
-};
-
-export const ROW_STYLE: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: '8px',
-};
-
-export const INPUT_SM: React.CSSProperties = {
-  flex: 1,
-  background: 'rgba(0,0,0,0.25)',
-  border: '1px solid var(--border-subtle)',
-  borderRadius: '6px',
-  padding: '6px 10px',
-  color: 'var(--text-primary)',
-  fontSize: '0.8rem',
-  fontFamily: 'monospace',
-  outline: 'none',
-};
-
-export const TYPE_COLORS: Record<string, string> = {
-  'Ollama':     '#8B5CF6',
-  'Codex':      '#3B82F6',
-  'Claude MCP': '#F59E0B',
-  'Custom':     '#6B7280',
-};
-
-export const badge = (color: string): React.CSSProperties => ({
-  fontSize: '0.75rem',
-  fontWeight: 800,
-  padding: '2px 6px',
-  borderRadius: '4px',
-  background: `${color}18`,
-  color,
-  textTransform: 'uppercase',
-  letterSpacing: '0.04em',
-  flexShrink: 0,
-});
+import { Monitor, Play, Square, Shield, RefreshCw, Terminal, Globe, GitFork, ChevronDown, ChevronUp, Plus, X, ToggleLeft, ToggleRight, Zap } from 'lucide-react';
+import type { LocalService, AgentStatus } from './DesktopRemotePanel.types';
+import { PANEL_STYLE, ROW_STYLE, INPUT_SM, TYPE_COLORS, badge } from './DesktopRemotePanel.types';
 
 export const TunnelControl: React.FC<{
   tunnelActive: boolean;
@@ -211,7 +154,7 @@ export const McpBridge: React.FC<{
   onLog: (msg: string) => void;
 }> = ({ tunnelActive, onLog }) => {
   const [mcpTunnelActive, setMcpTunnelActive] = useState(false);
-  const [prevTunnel, setPrevTunnel] = useState(tunnelActive);
+  const prevTunnelRef = useRef(tunnelActive);
   const [remoteCommand, setRemoteCommand] = useState('');
   const [commandExecuting, setCommandExecuting] = useState(false);
   const [commandLogs, setCommandLogs] = useState<string[]>(['# Remote command output']);
@@ -219,8 +162,8 @@ export const McpBridge: React.FC<{
 
   useEffect(() => { commandLogEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [commandLogs]);
 
-  if (tunnelActive !== prevTunnel) {
-    setPrevTunnel(tunnelActive);
+  if (tunnelActive !== prevTunnelRef.current) {
+    prevTunnelRef.current = tunnelActive;
     if (!tunnelActive) setMcpTunnelActive(false);
   }
 
