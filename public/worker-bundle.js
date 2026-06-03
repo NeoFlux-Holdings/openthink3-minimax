@@ -1,8 +1,8 @@
-------formdata-undici-011040937605
+------formdata-undici-070652729393
 Content-Disposition: form-data; name="metadata"
 
-{"main_module":"index.js","bindings":[{"name":"CF_ACCOUNT_ID","type":"plain_text","text":""},{"name":"GH_REPO","type":"plain_text","text":"NeoFlux-Holdings/openthink2"},{"name":"MEMORIES","type":"kv_namespace","namespace_id":"4239437890d8481abd708bd4bdf80890"},{"name":"ARTIFACTS","type":"kv_namespace","namespace_id":"00000000000000000000000000000000"},{"name":"THREAD_DO","type":"durable_object_namespace","class_name":"ThreadDO"},{"name":"ORCHESTRATOR_DO","type":"durable_object_namespace","class_name":"OrchestratorDO"},{"name":"AI","type":"ai"}],"compatibility_date":"2024-09-23","compatibility_flags":["nodejs_compat"]}
-------formdata-undici-011040937605
+{"main_module":"index.js","bindings":[{"name":"CF_ACCOUNT_ID","type":"plain_text","text":""},{"name":"GH_REPO","type":"plain_text","text":"NeoFlux-Holdings/openthink3-minimax"},{"name":"MEMORIES","type":"kv_namespace","namespace_id":"4239437890d8481abd708bd4bdf80890"},{"name":"ARTIFACTS","type":"kv_namespace","namespace_id":"2b745f0f041b40279d8f013afee9ef5c"},{"name":"THREAD_DO","type":"durable_object_namespace","class_name":"ThreadDO"},{"name":"ORCHESTRATOR_DO","type":"durable_object_namespace","class_name":"OrchestratorDO"},{"name":"OPENTHINK3_DB","type":"d1","id":"afd1e794-f54d-4524-b9b0-10ba6500ee3e"},{"name":"GBRAIN_PAGES","type":"vectorize","index_name":"gbrain-pages"},{"name":"AI","type":"ai"}],"compatibility_date":"2024-09-23","compatibility_flags":["nodejs_compat"]}
+------formdata-undici-070652729393
 Content-Disposition: form-data; name="index.js"; filename="index.js"
 Content-Type: application/javascript+module
 
@@ -480,9 +480,9 @@ var init_hrtime = __esm({
     init_virtual_unenv_global_polyfill_cloudflare_unenv_preset_node_console();
     init_performance2();
     hrtime = /* @__PURE__ */ Object.assign(/* @__PURE__ */ __name(function hrtime2(startTime) {
-      const now = Date.now();
-      const seconds = Math.trunc(now / 1e3);
-      const nanos = now % 1e3 * 1e6;
+      const now2 = Date.now();
+      const seconds = Math.trunc(now2 / 1e3);
+      const nanos = now2 % 1e3 * 1e6;
       if (startTime) {
         let diffSeconds = seconds - startTime[0];
         let diffNanos = nanos - startTime[0];
@@ -52067,9 +52067,9 @@ var Agent = class Agent2 extends Server {
   */
   async alarm() {
     await super.alarm();
-    const now = Math.floor(Date.now() / 1e3);
+    const now2 = Math.floor(Date.now() / 1e3);
     const result = this.sql`
-      SELECT * FROM cf_agents_schedules WHERE time <= ${now}
+      SELECT * FROM cf_agents_schedules WHERE time <= ${now2}
     `;
     if (result && Array.isArray(result)) {
       const DUPLICATE_SCHEDULE_THRESHOLD = 10;
@@ -52089,14 +52089,14 @@ var Agent = class Agent2 extends Server {
         if (row.type === "interval" && row.running === 1) {
           const executionStartedAt = row.execution_started_at ?? 0;
           const hungTimeoutSeconds = this._resolvedOptions.hungScheduleTimeoutSeconds;
-          const elapsedSeconds = now - executionStartedAt;
+          const elapsedSeconds = now2 - executionStartedAt;
           if (elapsedSeconds < hungTimeoutSeconds) {
             console.warn(`Skipping interval schedule ${row.id}: previous execution still running`);
             continue;
           }
           console.warn(`Forcing reset of hung interval schedule ${row.id} (started ${elapsedSeconds}s ago)`);
         }
-        if (row.type === "interval") this.sql`UPDATE cf_agents_schedules SET running = 1, execution_started_at = ${now} WHERE id = ${row.id}`;
+        if (row.type === "interval") this.sql`UPDATE cf_agents_schedules SET running = 1, execution_started_at = ${now2} WHERE id = ${row.id}`;
         if (row.owner_path) try {
           const ownerPath = JSON.parse(row.owner_path);
           executed = await this._cf_dispatchScheduledCallback(ownerPath, row);
@@ -53772,12 +53772,12 @@ var Agent = class Agent2 extends Server {
       maxDelayMs: 3e3
     });
     if (resetTracking) {
-      const now = Math.floor(Date.now() / 1e3);
+      const now2 = Math.floor(Date.now() / 1e3);
       this.sql`
         UPDATE cf_agents_workflows
         SET status = 'queued',
-            created_at = ${now},
-            updated_at = ${now},
+            created_at = ${now2},
+            updated_at = ${now2},
             completed_at = NULL,
             error_name = NULL,
             error_message = NULL
@@ -54035,12 +54035,12 @@ var Agent = class Agent2 extends Server {
   */
   _updateWorkflowTracking(workflowId, status) {
     const statusName = status.status;
-    const now = Math.floor(Date.now() / 1e3);
+    const now2 = Math.floor(Date.now() / 1e3);
     const completedAt = [
       "complete",
       "errored",
       "terminated"
-    ].includes(statusName) ? now : null;
+    ].includes(statusName) ? now2 : null;
     const errorName = status.error?.name ?? null;
     const errorMessage = status.error?.message ?? null;
     this.sql`
@@ -54048,7 +54048,7 @@ var Agent = class Agent2 extends Server {
       SET status = ${statusName},
           error_name = ${errorName},
           error_message = ${errorMessage},
-          updated_at = ${now},
+          updated_at = ${now2},
           completed_at = ${completedAt}
       WHERE workflow_id = ${workflowId}
     `;
@@ -54121,12 +54121,12 @@ var Agent = class Agent2 extends Server {
   * @param callback - The callback payload
   */
   async onWorkflowCallback(callback) {
-    const now = Math.floor(Date.now() / 1e3);
+    const now2 = Math.floor(Date.now() / 1e3);
     switch (callback.type) {
       case "progress":
         this.sql`
           UPDATE cf_agents_workflows
-          SET status = 'running', updated_at = ${now}
+          SET status = 'running', updated_at = ${now2}
           WHERE workflow_id = ${callback.workflowId} AND status IN ('queued', 'waiting')
         `;
         await this.onWorkflowProgress(callback.workflowName, callback.workflowId, callback.progress);
@@ -54134,7 +54134,7 @@ var Agent = class Agent2 extends Server {
       case "complete":
         this.sql`
           UPDATE cf_agents_workflows
-          SET status = 'complete', updated_at = ${now}, completed_at = ${now}
+          SET status = 'complete', updated_at = ${now2}, completed_at = ${now2}
           WHERE workflow_id = ${callback.workflowId}
             AND status NOT IN ('terminated', 'paused')
         `;
@@ -54143,7 +54143,7 @@ var Agent = class Agent2 extends Server {
       case "error":
         this.sql`
           UPDATE cf_agents_workflows
-          SET status = 'errored', updated_at = ${now}, completed_at = ${now},
+          SET status = 'errored', updated_at = ${now2}, completed_at = ${now2},
               error_name = 'WorkflowError', error_message = ${callback.error}
           WHERE workflow_id = ${callback.workflowId}
             AND status NOT IN ('terminated', 'paused')
@@ -57101,6 +57101,319 @@ var McpAgent = class McpAgent2 extends Agent {
   }
 };
 
+// src/skills.ts
+init_virtual_unenv_global_polyfill_cloudflare_unenv_preset_node_process();
+init_virtual_unenv_global_polyfill_cloudflare_unenv_preset_node_console();
+init_performance2();
+var EMBED_MODEL = "@cf/baai/bge-small-en-v1.5";
+var CHAT_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
+var FAST_CHAT_MODEL = "@cf/meta/llama-3.1-8b-instruct-fp8";
+async function embed(env3, text) {
+  const out = await env3.AI.run(EMBED_MODEL, { text: [text] });
+  return out.data[0];
+}
+__name(embed, "embed");
+function newId(prefix) {
+  return `${prefix}_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
+}
+__name(newId, "newId");
+function now() {
+  return Math.floor(Date.now() / 1e3);
+}
+__name(now, "now");
+async function handleCapture(env3, body) {
+  const id = newId("page");
+  const ts = now();
+  const signal = typeof body.signal === "number" ? body.signal : 0.5;
+  const metadata = body.metadata ? JSON.stringify(body.metadata) : null;
+  const title2 = body.title ?? null;
+  await env3.OPENTHINK3_DB.prepare(
+    `INSERT INTO pages (id, thread_id, type, title, content, metadata, signal, created_at, updated_at, vector_id)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, NULL)`
+  ).bind(id, body.threadId, body.type, title2, body.content, metadata, signal, ts, ts).run();
+  const vector = await embed(env3, `${title2 ?? ""}
+${body.content}`.trim());
+  const vectorId = id;
+  await env3.GBRAIN_PAGES.upsert([
+    {
+      id: vectorId,
+      values: vector,
+      metadata: {
+        thread_id: body.threadId,
+        type: body.type,
+        page_id: id
+      }
+    }
+  ]);
+  await env3.OPENTHINK3_DB.prepare(`UPDATE pages SET vector_id = ?1 WHERE id = ?2`).bind(vectorId, id).run();
+  await env3.OPENTHINK3_DB.prepare(
+    `INSERT INTO pages_fts (rowid, title, content)
+     SELECT rowid, COALESCE(title, ''), content FROM pages WHERE id = ?1`
+  ).bind(id).run();
+  await env3.OPENTHINK3_DB.prepare(
+    `INSERT INTO threads (id, title, created_at, updated_at) VALUES (?1, NULL, ?2, ?2)
+     ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at`
+  ).bind(body.threadId, ts).run();
+  return { id, vectorId };
+}
+__name(handleCapture, "handleCapture");
+async function handleSearch(env3, body) {
+  const limit = Math.min(Math.max(body.limit ?? 10, 1), 50);
+  const queryVec = await embed(env3, body.query);
+  const vectorFilter = {};
+  if (body.threadId) vectorFilter.thread_id = body.threadId;
+  if (body.types && body.types.length === 1) vectorFilter.type = body.types[0];
+  const vectorRes = await env3.GBRAIN_PAGES.query(queryVec, {
+    topK: limit * 2,
+    returnMetadata: true,
+    filter: Object.keys(vectorFilter).length > 0 ? vectorFilter : void 0
+  });
+  const semanticHits = /* @__PURE__ */ new Map();
+  for (const m of vectorRes.matches) {
+    semanticHits.set(m.id, {
+      score: m.score,
+      meta: m.metadata ?? {}
+    });
+  }
+  const ftsQuery = body.query.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/).filter((w) => w.length > 1).map((w) => `"${w}"`).join(" OR ");
+  const keywordHits = /* @__PURE__ */ new Map();
+  if (ftsQuery) {
+    const ftsSql = `SELECT p.id, p.thread_id, p.type, p.title, p.content, p.signal, rank
+      FROM pages_fts f
+      JOIN pages p ON p.rowid = f.rowid
+      WHERE pages_fts MATCH ?1
+      ${body.threadId ? "AND p.thread_id = ?2" : ""}
+      ${body.types && body.types.length > 0 ? `AND p.type IN (${body.types.map(() => "?").join(",")})` : ""}
+      ORDER BY rank LIMIT ?${body.threadId ? 3 : 2}`;
+    const ftsStmt = env3.OPENTHINK3_DB.prepare(ftsSql);
+    if (body.threadId && body.types && body.types.length > 0) {
+      const r2 = await ftsStmt.bind(ftsQuery, body.threadId, ...body.types, limit * 2).all();
+      for (const row of r2.results ?? []) keywordHits.set(row.id, row.rank);
+    } else if (body.threadId) {
+      const r2 = await ftsStmt.bind(ftsQuery, body.threadId, limit * 2).all();
+      for (const row of r2.results ?? []) keywordHits.set(row.id, row.rank);
+    } else if (body.types && body.types.length > 0) {
+      const r2 = await ftsStmt.bind(ftsQuery, ...body.types, limit * 2).all();
+      for (const row of r2.results ?? []) keywordHits.set(row.id, row.rank);
+    } else {
+      const r2 = await ftsStmt.bind(ftsQuery, limit * 2).all();
+      for (const row of r2.results ?? []) keywordHits.set(row.id, row.rank);
+    }
+  }
+  const allIds = /* @__PURE__ */ new Set([...semanticHits.keys(), ...keywordHits.keys()]);
+  if (allIds.size === 0) {
+    return { results: [], query: body.query, count: 0 };
+  }
+  const placeholders = Array.from(allIds).map(() => "?").join(",");
+  const hydrated = await env3.OPENTHINK3_DB.prepare(
+    `SELECT id, thread_id, type, title, content, signal FROM pages WHERE id IN (${placeholders})`
+  ).bind(...allIds).all();
+  const results = (hydrated.results ?? []).map((row) => {
+    const id = row.id;
+    const semScore = semanticHits.get(id)?.score ?? 0;
+    const kwScore = keywordHits.has(id) ? 1 : 0;
+    const combined = 0.7 * semScore + 0.3 * kwScore;
+    const source = semScore > 0 && kwScore > 0 ? "both" : semScore > 0 ? "semantic" : "keyword";
+    return {
+      id,
+      threadId: row.thread_id,
+      type: row.type,
+      title: row.title ?? null,
+      content: row.content,
+      signal: row.signal,
+      score: Math.round(combined * 1e3) / 1e3,
+      source
+    };
+  });
+  results.sort((a2, b) => b.score - a2.score);
+  return { results: results.slice(0, limit), query: body.query, count: results.length };
+}
+__name(handleSearch, "handleSearch");
+async function handleThink(env3, body, writer, encoder) {
+  const recall = await handleSearch(env3, {
+    query: body.query,
+    threadId: body.threadId,
+    limit: 8
+  });
+  const systemPrompt = body.system ?? `You are gbrain, the memory-and-reasoning layer of OpenThink3. Use the recalled context below to answer the user's question. If the context is empty, say so honestly and answer from general knowledge. Cite recalled pages as [page_id].`;
+  const contextBlock = recall.results.length === 0 ? "(no recalled context)" : recall.results.map(
+    (r2, i2) => `[${i2 + 1}] (${r2.source}, score=${r2.score}, signal=${r2.signal}, type=${r2.type}) ${r2.title ? `# ${r2.title}
+` : ""}${r2.content}`
+  ).join("\n\n---\n\n");
+  const messages = [
+    { role: "system", content: `${systemPrompt}
+
+Recalled context:
+${contextBlock}` },
+    ...(body.history ?? []).map((m) => ({ role: m.role, content: m.content })),
+    { role: "user", content: body.query }
+  ];
+  try {
+    const stream = await env3.AI.run(CHAT_MODEL, {
+      messages,
+      stream: true,
+      max_tokens: 1024
+    });
+    if (stream instanceof ReadableStream) {
+      const reader = stream.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let gotAny = false;
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const normalized = buffer.split("\n").map((l) => l.trim().replace(/^data:\s*/, "")).filter((l) => l && l !== "[DONE]");
+        buffer = "";
+        for (const line of normalized) {
+          try {
+            const j = JSON.parse(line);
+            const piece = j.response ?? j.token;
+            if (piece) {
+              gotAny = true;
+              await writer.write(
+                encoder.encode(`data: ${JSON.stringify({ chunk: piece })}
+
+`)
+              );
+            }
+          } catch {
+            if (line.length > 0) {
+              gotAny = true;
+              await writer.write(
+                encoder.encode(`data: ${JSON.stringify({ chunk: line })}
+
+`)
+              );
+            }
+          }
+        }
+      }
+      if (!gotAny) throw new Error("empty stream");
+    } else if (stream && typeof stream === "object" && "response" in stream) {
+      const piece = stream.response;
+      if (piece) {
+        await writer.write(
+          encoder.encode(`data: ${JSON.stringify({ chunk: piece })}
+
+`)
+        );
+      }
+    }
+  } catch {
+    const res = await env3.AI.run(CHAT_MODEL, {
+      messages,
+      max_tokens: 1024
+    });
+    const piece = res.response ?? "";
+    if (piece) {
+      await writer.write(encoder.encode(`data: ${JSON.stringify({ chunk: piece })}
+
+`));
+    }
+  }
+  await writer.write(encoder.encode(`data: [DONE]
+
+`));
+  await writer.close().catch(() => {
+  });
+}
+__name(handleThink, "handleThink");
+async function handleRun(env3, body) {
+  const id = env3.ORCHESTRATOR_DO.idFromName("default");
+  const stub = env3.ORCHESTRATOR_DO.get(id);
+  const res = await stub.fetch(
+    new Request("https://orchestrator/tool/dispatch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    })
+  );
+  const result = await res.json().catch(() => ({}));
+  return { result, tool: "dispatch" };
+}
+__name(handleRun, "handleRun");
+async function handleEvals(env3, body) {
+  const suite = body.suite ?? "smoke";
+  const ts = now();
+  const id = newId("bench");
+  const cases = [
+    {
+      id: "hello",
+      prompt: "Say 'hello from gbrain' exactly.",
+      mustContain: ["hello", "gbrain"]
+    },
+    {
+      id: "json",
+      prompt: 'Reply with a JSON object: {"ok": true}',
+      mustContain: ["ok", "true"]
+    },
+    {
+      id: "concise",
+      prompt: "Explain Postgres in one sentence.",
+      mustContain: ["database", "sql"]
+    }
+  ];
+  let passed = 0;
+  const details = [];
+  for (const c of cases) {
+    const res = await env3.AI.run(FAST_CHAT_MODEL, {
+      messages: [{ role: "user", content: c.prompt }],
+      max_tokens: 256
+    });
+    const text = (res.response ?? "").toLowerCase();
+    const ok = c.mustContain.every((needle) => text.includes(needle.toLowerCase()));
+    if (ok) passed++;
+    details.push({ id: c.id, passed: ok, response: res.response });
+  }
+  const total = cases.length;
+  const score = total === 0 ? 0 : passed / total;
+  await env3.OPENTHINK3_DB.prepare(
+    `INSERT INTO benchmarks (id, suite, score, total, passed, details, created_at)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`
+  ).bind(id, suite, score, total, passed, JSON.stringify(details), ts).run();
+  return { id, suite, score, passed, total, details };
+}
+__name(handleEvals, "handleEvals");
+async function handleDream(env3) {
+  const ts = now();
+  const thirtyDaysAgo = ts - 60 * 60 * 24 * 30;
+  const decayed = await env3.OPENTHINK3_DB.prepare(
+    `UPDATE pages
+     SET signal = MAX(0.0, signal * 0.9)
+     WHERE created_at < ?1 AND signal < 0.3`
+  ).bind(thirtyDaysAgo).run();
+  const oneDayAgo = ts - 60 * 60 * 24;
+  const boosted = await env3.OPENTHINK3_DB.prepare(
+    `UPDATE pages
+     SET signal = MIN(1.0, signal * 1.05)
+     WHERE updated_at > ?1`
+  ).bind(oneDayAgo).run();
+  const ninetyDaysAgo = ts - 60 * 60 * 24 * 90;
+  const toPrune = await env3.OPENTHINK3_DB.prepare(
+    `SELECT id, rowid FROM pages WHERE created_at < ?1 AND signal = 0`
+  ).bind(ninetyDaysAgo).all();
+  const prunedIds = (toPrune.results ?? []).map((r2) => r2.id);
+  const prunedRowids = (toPrune.results ?? []).map((r2) => r2.rowid);
+  let pruned = 0;
+  if (prunedIds.length > 0) {
+    const placeholders = prunedIds.map(() => "?").join(",");
+    await env3.OPENTHINK3_DB.prepare(`DELETE FROM pages WHERE id IN (${placeholders})`).bind(...prunedIds).run();
+    for (const rid of prunedRowids) {
+      await env3.OPENTHINK3_DB.prepare(`DELETE FROM pages_fts WHERE rowid = ?1`).bind(rid).run();
+    }
+    await env3.GBRAIN_PAGES.deleteByIds(prunedIds).catch(() => {
+    });
+    pruned = prunedIds.length;
+  }
+  return {
+    decayed: decayed.meta?.changes ?? 0,
+    boosted: boosted.meta?.changes ?? 0,
+    pruned
+  };
+}
+__name(handleDream, "handleDream");
+
 // src/index.ts
 var OrchestratorDO = class extends McpAgent {
   static {
@@ -57113,8 +57426,10 @@ var OrchestratorDO = class extends McpAgent {
       "Check the current context and return relevant info across threads",
       { query: external_exports.string() },
       async ({ query }) => {
-        const threadKeys = await this.env.MEMORIES.list({ prefix: "thread:" });
-        const memoryKeys = await this.env.MEMORIES.list({ prefix: "memory:" });
+        const [threadKeys, memoryKeys] = await Promise.all([
+          this.env.MEMORIES.list({ prefix: "thread:" }),
+          this.env.MEMORIES.list({ prefix: "memory:" })
+        ]);
         const recentThreads = threadKeys.keys.slice(0, 5).map((k) => k.name);
         const recentMemories = memoryKeys.keys.slice(0, 5).map((k) => k.name);
         return {
@@ -57214,83 +57529,106 @@ If you need context or memory, call the check_context tool.`;
             let loop = true;
             let depth = 0;
             const maxDepth = 5;
-            while (loop && depth < maxDepth) {
-              depth++;
-              const aiResponse = await this.env.AI.run(selectedModel, {
+            const runToolCallIteration = /* @__PURE__ */ __name(async () => {
+              return await this.env.AI.run(selectedModel, {
                 messages: llmMessages,
                 tools: tools.length > 0 ? tools : void 0
               });
-              if (aiResponse.tool_calls && aiResponse.tool_calls.length > 0) {
-                for (const tc of aiResponse.tool_calls) {
-                  await writer.write(encoder.encode(`data: ${JSON.stringify({ status: `Calling tool ${tc.name}...` })}
+            }, "runToolCallIteration");
+            const runToolExecution = /* @__PURE__ */ __name(async (aiResponse) => {
+              const mcpToolByName = new Map(mcpTools.map((t2) => [t2.name, t2]));
+              await Promise.all(aiResponse.tool_calls.map(async (tc) => {
+                await writer.write(encoder.encode(`data: ${JSON.stringify({ status: `Calling tool ${tc.name}...` })}
 
 `));
-                  const mcpTool = mcpTools.find((t2) => t2.name === tc.name);
-                  if (mcpTool) {
-                    const toolResult = await this.mcp.callTool({
-                      serverId: mcpTool.serverId,
-                      name: tc.name,
-                      arguments: tc.arguments
-                    });
-                    llmMessages.push({
-                      role: "assistant",
-                      content: "",
-                      tool_calls: [tc]
-                    });
-                    llmMessages.push({
-                      role: "tool",
-                      name: tc.name,
-                      content: JSON.stringify(toolResult)
-                    });
+                const mcpTool = mcpToolByName.get(tc.name);
+                if (mcpTool) {
+                  const toolResult = await this.mcp.callTool({
+                    serverId: mcpTool.serverId,
+                    name: tc.name,
+                    arguments: tc.arguments
+                  });
+                  llmMessages.push({
+                    role: "assistant",
+                    content: "",
+                    tool_calls: [tc]
+                  });
+                  llmMessages.push({
+                    role: "tool",
+                    name: tc.name,
+                    content: JSON.stringify(toolResult)
+                  });
+                }
+              }));
+            }, "runToolExecution");
+            const streamFinalResponse = /* @__PURE__ */ __name(async () => {
+              await writer.write(encoder.encode(`data: ${JSON.stringify({ status: "Thinking..." })}
+
+`));
+              const aiStream = await this.env.AI.run(selectedModel, {
+                messages: llmMessages,
+                stream: true
+              });
+              const reader = aiStream.getReader();
+              const decoder = new TextDecoder();
+              let fullText = "";
+              let buffer = "";
+              const processStreamChunk = /* @__PURE__ */ __name(async (value) => {
+                if (!value) return;
+                const chunk = decoder.decode(value, { stream: true });
+                buffer += chunk;
+                const parts = buffer.split("\n");
+                buffer = parts.pop() ?? "";
+                const writes = [];
+                for (const rawLine of parts) {
+                  const line = rawLine.trim();
+                  if (!line.startsWith("data: ")) continue;
+                  if (line === "data: [DONE]") continue;
+                  try {
+                    const parsed = JSON.parse(line.slice(6));
+                    if (parsed.response) {
+                      fullText += parsed.response;
+                      writes.push(writer.write(encoder.encode(`data: ${JSON.stringify({ response: parsed.response })}
+
+`)));
+                    }
+                  } catch (e) {
                   }
                 }
+                await Promise.all(writes);
+              }, "processStreamChunk");
+              const readStreamOnce = /* @__PURE__ */ __name(async () => {
+                const result = await reader.read();
+                if (result.done) return false;
+                await processStreamChunk(result.value);
+                return true;
+              }, "readStreamOnce");
+              const drainStream = /* @__PURE__ */ __name(async () => {
+                const hasMore = await readStreamOnce();
+                if (hasMore) {
+                  await drainStream();
+                }
+              }, "drainStream");
+              await drainStream();
+              const assistantMsgId = crypto.randomUUID();
+              this.sql`
+                INSERT INTO messages (id, role, content, timestamp)
+                VALUES (${assistantMsgId}, 'assistant', ${fullText}, ${Date.now()})
+              `;
+            }, "streamFinalResponse");
+            const agentLoop = /* @__PURE__ */ __name(async () => {
+              if (!loop || depth >= maxDepth) return;
+              depth++;
+              const aiResponse = await runToolCallIteration();
+              if (aiResponse.tool_calls && aiResponse.tool_calls.length > 0) {
+                await runToolExecution(aiResponse);
+                await agentLoop();
               } else {
                 loop = false;
-                await writer.write(encoder.encode(`data: ${JSON.stringify({ status: "Thinking..." })}
-
-`));
-                const aiStream = await this.env.AI.run(selectedModel, {
-                  messages: llmMessages,
-                  stream: true
-                });
-                const reader = aiStream.getReader();
-                const decoder = new TextDecoder();
-                let fullText = "";
-                let buffer = "";
-                while (true) {
-                  const { done, value } = await reader.read();
-                  if (done) break;
-                  const chunk = decoder.decode(value, { stream: true });
-                  buffer += chunk;
-                  let boundary = buffer.indexOf("\n");
-                  while (boundary !== -1) {
-                    const line = buffer.slice(0, boundary).trim();
-                    buffer = buffer.slice(boundary + 1);
-                    if (line.startsWith("data: ")) {
-                      if (line.trim() === "data: [DONE]") {
-                      } else {
-                        try {
-                          const parsed = JSON.parse(line.slice(6));
-                          if (parsed.response) {
-                            fullText += parsed.response;
-                            await writer.write(encoder.encode(`data: ${JSON.stringify({ response: parsed.response })}
-
-`));
-                          }
-                        } catch (e) {
-                        }
-                      }
-                    }
-                    boundary = buffer.indexOf("\n");
-                  }
-                }
-                const assistantMsgId = crypto.randomUUID();
-                this.sql`
-                  INSERT INTO messages (id, role, content, timestamp)
-                  VALUES (${assistantMsgId}, 'assistant', ${fullText}, ${Date.now()})
-                `;
+                await streamFinalResponse();
               }
-            }
+            }, "agentLoop");
+            await agentLoop();
             await writer.write(encoder.encode("data: [DONE]\n\n"));
           } catch (err) {
             console.error("Error in AI loop:", err);
@@ -57325,7 +57663,7 @@ function corsHeaders2() {
   return {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization"
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-CF-Token, X-CF-Account-Id"
   };
 }
 __name(corsHeaders2, "corsHeaders");
@@ -57369,7 +57707,80 @@ async function execOnVM(env3, command) {
   }
 }
 __name(execOnVM, "execOnVM");
+async function handleSkillRoute(env3, request, url2, ctx) {
+  const route = url2.pathname.replace(/^\/api\/skill\//, "");
+  if (request.method !== "POST") {
+    return jsonResp({ error: `Method ${request.method} not allowed` }, 405);
+  }
+  switch (route) {
+    case "capture": {
+      const body = await request.json().catch(() => ({}));
+      if (!body.threadId || !body.type || !body.content) {
+        return jsonResp({ error: "threadId, type, content are required" }, 400);
+      }
+      const r2 = await handleCapture(env3, body);
+      return jsonResp(r2);
+    }
+    case "search": {
+      const body = await request.json().catch(() => ({}));
+      if (!body.query) return jsonResp({ error: "query is required" }, 400);
+      const r2 = await handleSearch(env3, body);
+      return jsonResp(r2);
+    }
+    case "think": {
+      const body = await request.json().catch(() => ({}));
+      if (!body.query) return jsonResp({ error: "query is required" }, 400);
+      const { readable, writable } = new TransformStream();
+      const writer = writable.getWriter();
+      const encoder = new TextEncoder();
+      ctx.waitUntil(handleThink(env3, body, writer, encoder));
+      return new Response(readable, {
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+          ...corsHeaders2()
+        }
+      });
+    }
+    case "run": {
+      const body = await request.json().catch(() => ({}));
+      if (!body.command) return jsonResp({ error: "command is required" }, 400);
+      const r2 = await handleRun(env3, body);
+      return jsonResp(r2);
+    }
+    case "evals": {
+      const body = await request.json().catch(() => ({})) ?? {};
+      const r2 = await handleEvals(env3, body);
+      return jsonResp(r2);
+    }
+    default:
+      return jsonResp({ error: `Unknown skill route: ${route}` }, 404);
+  }
+}
+__name(handleSkillRoute, "handleSkillRoute");
 var index_default = {
+  // ── Cron trigger handler ─────────────────────────────────────────────
+  // Two crons configured in wrangler.toml:
+  //   "0 5 * * *"  → gbrain-dream (nightly memory consolidation)
+  //   "0 6 * * *"  → gbrain-evals (eval suite scorecard)
+  async scheduled(controller, env3, ctx) {
+    const cron = controller.cron;
+    console.log(`[cron] firing: ${cron}`);
+    if (cron === "0 5 * * *") {
+      ctx.waitUntil(
+        handleDream(env3).then((r2) => console.log("[cron] gbrain-dream", JSON.stringify(r2)))
+      );
+    } else if (cron === "0 6 * * *") {
+      ctx.waitUntil(
+        handleEvals(env3, { suite: "cron-daily" }).then(
+          (r2) => console.log(`[cron] gbrain-evals score=${r2.score} (${r2.passed}/${r2.total})`)
+        )
+      );
+    } else {
+      console.log(`[cron] unhandled cron: ${cron}`);
+    }
+  },
   async fetch(request, env3, ctx) {
     const url2 = new URL(request.url);
     if (request.method === "OPTIONS") {
@@ -57422,9 +57833,9 @@ var index_default = {
               await sendEvent({ log: "\u{1F4A1} Tip: Set EXE_DEV_TOKEN secret and deploy gbrain-evals to your VM" });
             } else {
               const lines = output.split("\n");
-              for (const line of lines) {
-                if (line.trim()) await sendEvent({ log: line });
-              }
+              const trimmedLines = [];
+              for (const l of lines) if (l.trim()) trimmedLines.push(l);
+              await Promise.all(trimmedLines.map((line) => sendEvent({ log: line })));
               const jsonLine = lines.find((l) => l.trim().startsWith("{"));
               if (jsonLine) {
                 try {
@@ -57516,6 +57927,16 @@ var index_default = {
         return jsonResp({ error: err?.message ?? String(err) }, 500);
       }
     }
+    if (url2.pathname.startsWith("/api/skill/")) {
+      if (request.method === "OPTIONS") {
+        return new Response(null, { headers: corsHeaders2() });
+      }
+      try {
+        return await handleSkillRoute(env3, request, url2, ctx);
+      } catch (err) {
+        return jsonResp({ error: err?.message ?? String(err) }, 500);
+      }
+    }
     if (url2.pathname.startsWith("/api/thread/")) {
       const threadId = url2.pathname.split("/")[3] || "default";
       const id = env3.THREAD_DO.idFromName(threadId);
@@ -57558,16 +57979,30 @@ async function appendHistory(env3, entry) {
   await env3.ARTIFACTS.put(`history:${entry.id}`, JSON.stringify(entry));
 }
 __name(appendHistory, "appendHistory");
-async function cfFetch(env3, path, init = {}) {
-  if (!env3.CF_API_TOKEN) throw new Error("CF_API_TOKEN secret is not configured on this worker");
-  if (!env3.CF_ACCOUNT_ID) throw new Error("CF_ACCOUNT_ID var is not configured on this worker");
+function resolveCfCreds(env3, request) {
+  const headerToken = request.headers.get("X-CF-Token");
+  const headerAccount = request.headers.get("X-CF-Account-Id");
+  const token = headerToken || env3.CF_API_TOKEN || null;
+  const accountId = headerAccount || env3.CF_ACCOUNT_ID || null;
+  let source = "none";
+  if (headerToken || headerAccount) source = "header";
+  else if (token || accountId) source = "env";
+  return { token, accountId, source };
+}
+__name(resolveCfCreds, "resolveCfCreds");
+async function cfFetch(env3, request, path, init = {}) {
+  const { token, accountId } = resolveCfCreds(env3, request);
+  if (!token) throw new Error("CF credentials missing: provide X-CF-Token header or set CF_API_TOKEN env var");
+  if (!accountId) throw new Error("CF credentials missing: provide X-CF-Account-Id header or set CF_ACCOUNT_ID env var");
   const url2 = `https://api.cloudflare.com/client/v4${path}`;
+  const initHeaders = init.headers || {};
+  const contentType2 = initHeaders["Content-Type"] || initHeaders["content-type"] || "application/json";
   const r2 = await fetch(url2, {
     ...init,
     headers: {
-      ...init.headers || {},
-      "Authorization": `Bearer ${env3.CF_API_TOKEN}`,
-      "Content-Type": "application/json"
+      ...initHeaders,
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": contentType2
     }
   });
   const data = await r2.json();
@@ -57579,7 +58014,7 @@ async function cfFetch(env3, path, init = {}) {
 }
 __name(cfFetch, "cfFetch");
 async function ghFetch(env3, path, init = {}) {
-  if (!env3.GH_TOKEN) throw new Error("GH_TOKEN secret is not configured on this worker");
+  if (!env3.GH_TOKEN) throw new Error("GH_TOKEN secret is not configured on this worker (migrating to GitHub App)");
   const url2 = `https://api.github.com${path}`;
   const r2 = await fetch(url2, {
     ...init,
@@ -57603,6 +58038,7 @@ async function handleCf(env3, request) {
   const subpath = url2.pathname.replace(/^\/api\/cf/, "");
   const method = request.method;
   if (subpath === "/status" && method === "GET") {
+    const { source } = resolveCfCreds(env3, request);
     return jsonResp({
       ok: true,
       configured: {
@@ -57612,11 +58048,61 @@ async function handleCf(env3, request) {
         GH_REPO: env3.GH_REPO || null,
         ARTIFACTS_KV: !!env3.ARTIFACTS
       },
+      credentialsSource: source,
       manifest: await loadManifest(env3)
     });
   }
+  if (subpath === "/resolve-account" && method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    const token = body?.token;
+    if (!token || typeof token !== "string") {
+      return jsonResp({ error: "Body must include { token: string }" }, 400);
+    }
+    const cfHeaders = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+    try {
+      const accountsRes = await fetch("https://api.cloudflare.com/client/v4/accounts?per_page=50", { headers: cfHeaders }).then((r2) => r2.json());
+      if (!accountsRes.success) {
+        const msg = (accountsRes.errors || []).map((e) => e.message).join("; ") || "Failed to list accounts";
+        return jsonResp({ error: msg }, 502);
+      }
+      const account = (accountsRes.result || [])[0];
+      if (!account) {
+        return jsonResp({ error: "No accounts found for this token" }, 404);
+      }
+      const accountId = account.id;
+      const probe = /* @__PURE__ */ __name(async (url3) => {
+        try {
+          const r2 = await fetch(url3, { headers: cfHeaders });
+          return await r2.json();
+        } catch {
+          return { success: false, result: [] };
+        }
+      }, "probe");
+      const [zonesRes, workersRes, pagesRes] = await Promise.all([
+        probe("https://api.cloudflare.com/client/v4/zones?per_page=50"),
+        probe(`https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/scripts?per_page=1`),
+        probe(`https://api.cloudflare.com/client/v4/accounts/${accountId}/pages/projects?per_page=1`)
+      ]);
+      const zones = (zonesRes.result || []).map((z2) => ({
+        id: z2.id,
+        name: z2.name,
+        status: z2.status
+      }));
+      return jsonResp({
+        ok: true,
+        accountId,
+        accountName: account.name,
+        email: account.owner?.email ?? null,
+        hasWorkers: Array.isArray(workersRes.result) && workersRes.result.length > 0,
+        hasPages: Array.isArray(pagesRes.result) && pagesRes.result.length > 0,
+        zones
+      });
+    } catch (err) {
+      return jsonResp({ error: err?.message ?? String(err) }, 500);
+    }
+  }
   if (subpath === "/zones" && method === "GET") {
-    const data = await cfFetch(env3, "/zones?per_page=50");
+    const data = await cfFetch(env3, request, "/zones?per_page=50");
     const zones = (data.result || []).map((z2) => ({
       id: z2.id,
       name: z2.name,
@@ -57625,7 +58111,9 @@ async function handleCf(env3, request) {
     return jsonResp({ zones, source: "live" });
   }
   if (subpath === "/workers" && method === "GET") {
-    const data = await cfFetch(env3, `/accounts/${env3.CF_ACCOUNT_ID}/workers/scripts`);
+    const { accountId } = resolveCfCreds(env3, request);
+    if (!accountId) return jsonResp({ error: "CF account ID required. Provide X-CF-Account-Id header or set CF_ACCOUNT_ID env var." }, 400);
+    const data = await cfFetch(env3, request, `/accounts/${accountId}/workers/scripts`);
     const workers = (data.result || []).map((w) => ({
       id: w.id,
       created_on: w.created_on,
@@ -57633,7 +58121,7 @@ async function handleCf(env3, request) {
     }));
     const enriched = await Promise.all(workers.map(async (w) => {
       try {
-        const d2 = await cfFetch(env3, `/accounts/${env3.CF_ACCOUNT_ID}/workers/scripts/${w.id}`);
+        const d2 = await cfFetch(env3, request, `/accounts/${accountId}/workers/scripts/${w.id}`);
         return { ...w, etag: d2.result?.etag, handlers: d2.result?.handlers?.length ?? 0, size: d2.result?.size };
       } catch {
         return w;
@@ -57696,36 +58184,14 @@ async function handleCf(env3, request) {
     if (!deployCode) {
       return jsonResp({ error: "No bundle to deploy. POST one to /api/cf/bundle/worker first." }, 400);
     }
+    const { accountId } = resolveCfCreds(env3, request);
+    if (!accountId) return jsonResp({ error: "CF account ID required. Provide X-CF-Account-Id header or set CF_ACCOUNT_ID env var." }, 400);
     const scriptName = body.scriptName || "openthink3-worker";
-    const putRes = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${env3.CF_ACCOUNT_ID}/workers/scripts/${scriptName}`,
-      {
-        method: "PUT",
-        headers: {
-          "Authorization": `Bearer ${env3.CF_API_TOKEN}`,
-          "Content-Type": "application/javascript"
-        },
-        body: deployCode
-      }
-    );
-    const putData = await putRes.json();
-    if (!putData.success) {
-      const err = (putData.errors || []).map((e) => e.message).join("; ") || `CF API ${putRes.status}`;
-      await appendHistory(env3, {
-        id: `deploy-err-${Date.now()}`,
-        ts: Date.now(),
-        actor: "user",
-        type: "deploy",
-        ok: false,
-        summary: `Deploy failed: ${err}`,
-        details: { scriptName, sha: deployMeta?.sha256 ?? null }
-      });
-      return jsonResp({ error: err, details: putData }, 502);
-    }
-    await env3.ARTIFACTS.put("worker:current", deployCode, {
-      metadata: deployMeta
+    const putData = await cfFetch(env3, request, `/accounts/${accountId}/workers/scripts/${scriptName}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/javascript" },
+      body: deployCode
     });
-    await env3.ARTIFACTS.delete("worker:staged");
     const manifest = {
       version: Date.now(),
       deployedAt: (/* @__PURE__ */ new Date()).toISOString(),
@@ -57736,23 +58202,29 @@ async function handleCf(env3, request) {
       message: body.message ?? null,
       deploymentId: putData.result?.id ?? null
     };
-    await env3.ARTIFACTS.put("manifest", JSON.stringify(manifest));
-    await appendHistory(env3, {
-      id: `deploy-${Date.now()}`,
-      ts: Date.now(),
-      actor: "user",
-      type: "deploy",
-      ok: true,
-      summary: `Deployed ${scriptName} (${(deployCode.length / 1024).toFixed(1)} KB)`,
-      details: { scriptName, deploymentId: manifest.deploymentId, sha: manifest.sha256, message: body.message ?? null }
-    });
+    await Promise.all([
+      env3.ARTIFACTS.put("worker:current", deployCode, { metadata: deployMeta }),
+      env3.ARTIFACTS.delete("worker:staged"),
+      env3.ARTIFACTS.put("manifest", JSON.stringify(manifest)),
+      appendHistory(env3, {
+        id: `deploy-${Date.now()}`,
+        ts: Date.now(),
+        actor: "user",
+        type: "deploy",
+        ok: true,
+        summary: `Deployed ${scriptName} (${(deployCode.length / 1024).toFixed(1)} KB)`,
+        details: { scriptName, deploymentId: manifest.deploymentId, sha: manifest.sha256, message: body.message ?? null }
+      })
+    ]);
     return jsonResp({ ok: true, manifest });
   }
   if (subpath === "/deploy/pages" && method === "POST") {
     const body = await request.json().catch(() => ({}));
     if (!body.projectName) return jsonResp({ error: "projectName required" }, 400);
     const branch = body.branch || "main";
-    const list = await cfFetch(env3, `/accounts/${env3.CF_ACCOUNT_ID}/pages/projects/${body.projectName}/deployments?per_page=1`);
+    const { accountId } = resolveCfCreds(env3, request);
+    if (!accountId) return jsonResp({ error: "CF account ID required. Provide X-CF-Account-Id header or set CF_ACCOUNT_ID env var." }, 400);
+    const list = await cfFetch(env3, request, `/accounts/${accountId}/pages/projects/${body.projectName}/deployments?per_page=1`);
     await appendHistory(env3, {
       id: `pages-${Date.now()}`,
       ts: Date.now(),
@@ -57781,7 +58253,12 @@ async function handleCf(env3, request) {
       return jsonResp({ error: "title, head, and non-empty files[] required" }, 400);
     }
     const base = body.base || "main";
-    const refData = await ghFetch(env3, `/repos/${env3.GH_REPO}/git/ref/heads/${base}`);
+    const [refData, existingFiles] = await Promise.all([
+      ghFetch(env3, `/repos/${env3.GH_REPO}/git/ref/heads/${base}`),
+      Promise.all(body.files.map(
+        (f) => ghFetch(env3, `/repos/${env3.GH_REPO}/contents/${encodeURIComponent(f.path)}?ref=${body.head}`).catch(() => null)
+      ))
+    ]);
     const baseSha = refData.object?.sha;
     if (!baseSha) return jsonResp({ error: `Base branch ${base} not found` }, 404);
     try {
@@ -57794,10 +58271,10 @@ async function handleCf(env3, request) {
         throw e;
       }
     }
-    for (const f of body.files) {
-      const existing = await ghFetch(env3, `/repos/${env3.GH_REPO}/contents/${encodeURIComponent(f.path)}?ref=${body.head}`).catch(() => null);
+    await Promise.all(body.files.map(async (f, i2) => {
+      const existing = existingFiles[i2];
       const sha = existing && existing.sha ? existing.sha : void 0;
-      await ghFetch(env3, `/repos/${env3.GH_REPO}/contents/${encodeURIComponent(f.path)}`, {
+      return ghFetch(env3, `/repos/${env3.GH_REPO}/contents/${encodeURIComponent(f.path)}`, {
         method: "PUT",
         body: JSON.stringify({
           message: body.title,
@@ -57806,21 +58283,23 @@ async function handleCf(env3, request) {
           sha
         })
       });
-    }
+    }));
     const pr = await ghFetch(env3, `/repos/${env3.GH_REPO}/pulls`, {
       method: "POST",
       body: JSON.stringify({ title: body.title, body: body.body || "", head: body.head, base })
     });
-    await appendHistory(env3, {
+    const prNumber = pr.number;
+    const prUrl = pr.html_url;
+    void appendHistory(env3, {
       id: `pr-${Date.now()}`,
       ts: Date.now(),
       actor: "user",
       type: "pr",
       ok: true,
-      summary: `Opened PR #${pr.number}: ${body.title}`,
-      details: { prNumber: pr.number, url: pr.html_url, head: body.head, base, files: body.files.length }
+      summary: `Opened PR #${prNumber}: ${body.title}`,
+      details: { prNumber, url: prUrl, head: body.head, base, files: body.files.length }
     });
-    return jsonResp({ ok: true, prNumber: pr.number, url: pr.html_url });
+    return jsonResp({ ok: true, prNumber, url: prUrl });
   }
   if (subpath === "/agent/submit" && method === "POST") {
     if (!env3.GH_REPO) return jsonResp({ error: "GH_REPO var is not configured" }, 503);
@@ -57876,4 +58355,4 @@ mime-types/index.js:
 */
 //# sourceMappingURL=index.js.map
 
-------formdata-undici-011040937605--
+------formdata-undici-070652729393--

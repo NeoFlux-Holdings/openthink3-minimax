@@ -155,7 +155,7 @@ const ThreadFeed: React.FC<ThreadFeedProps> = ({ threadId, initialPrompt, thread
     }
     const invocation = buildSkillInvocation(userMsg);
     if (!invocation) return null;
-    const { skill, request } = invocation;
+    const { skill } = invocation;
     setMessages(prev => prev.map(m =>
       m.id === userMsgId
         ? { ...m, skillInjection: { skill, summary: `Calling ${skill.workerEndpoint}…` } }

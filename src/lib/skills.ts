@@ -109,7 +109,7 @@ export function setSkillEnabled(id: SkillId, enabled: boolean): void {
   window.dispatchEvent(new Event('storage'));
 }
 
-export function isSkillConfigured(id: SkillId): boolean {
+export function isSkillConfigured(_id: SkillId): boolean {
   return true; // all skills are native + auto-configured
 }
 

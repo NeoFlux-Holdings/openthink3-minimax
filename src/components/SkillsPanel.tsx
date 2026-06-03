@@ -16,7 +16,7 @@ type PanelAction = { type: 'OPEN'; id: SkillId } | { type: 'CLOSE' };
 
 const initialPanel: PanelState = { activeId: null };
 
-function panelReducer(state: PanelState, action: PanelAction): PanelState {
+function panelReducer(_state: PanelState, action: PanelAction): PanelState {
   switch (action.type) {
     case 'OPEN':
       return { activeId: action.id };
