@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useReducer } from 'react';
 import { GitBranch, CheckCircle2, Loader2, Layers, GitCommit, Terminal, Dock } from 'lucide-react';
 
 interface Task {
@@ -7,46 +7,62 @@ interface Task {
   status: 'done' | 'running' | 'idle';
 }
 
+interface SimState {
+  tasks: Task[];
+  logs: string[];
+}
+
+type SimAction = { type: 'tick' } | { type: 'appendLog'; message: string };
+
+const simReducer = (state: SimState, action: SimAction): SimState => {
+  if (action.type === 'tick') {
+    const runningIdx = state.tasks.findIndex(t => t.status === 'running');
+    if (runningIdx === -1) return state;
+    const next = [...state.tasks];
+    const finished = next[runningIdx];
+    next[runningIdx] = { ...finished, status: 'done' };
+    if (runningIdx + 1 < next.length) {
+      next[runningIdx + 1] = { ...next[runningIdx + 1], status: 'running' };
+    }
+    return { tasks: next, logs: [...state.logs, `Task completed: ${finished.name}`] };
+  }
+  if (action.type === 'appendLog') {
+    return { ...state, logs: [...state.logs, action.message] };
+  }
+  return state;
+};
+
 const PierrePanel = ({ isPoppedOut = false }: { isPoppedOut?: boolean }) => {
-  const [tasks, setTasks] = useState<Task[]>([
-    { id: '1', name: 'Create self-hosted Convex Docker and tunnel config', status: 'done' },
-    { id: '2', name: 'Set Cloudflare DNS/tunnel for c and login hosts', status: 'done' },
-    { id: '3', name: 'Recover/verify Docker engine and start Convex on D: storage', status: 'done' },
-    { id: '4', name: 'Generate admin key and activate self-hosted envs', status: 'done' },
-    { id: '5', name: 'Deploy functions and env to a clean self-hosted Convex database', status: 'done' },
-    { id: '6', name: 'Audit and reduce pipeline/database bandwidth hotspots without hurting UX', status: 'running' },
-  ]);
+  const [sim, dispatchSim] = useReducer(simReducer, {
+    tasks: [
+      { id: '1', name: 'Create self-hosted Convex Docker and tunnel config', status: 'done' },
+      { id: '2', name: 'Set Cloudflare DNS/tunnel for c and login hosts', status: 'done' },
+      { id: '3', name: 'Recover/verify Docker engine and start Convex on D: storage', status: 'done' },
+      { id: '4', name: 'Generate admin key and activate self-hosted envs', status: 'done' },
+      { id: '5', name: 'Deploy functions and env to a clean self-hosted Convex database', status: 'done' },
+      { id: '6', name: 'Audit and reduce pipeline/database bandwidth hotspots without hurting UX', status: 'running' },
+    ],
+    logs: [
+      'Local branch setup completed.',
+      'Docker daemon responsive on host port 2375.',
+      'Tunnel established: https://convex.openthink.internal -> 127.0.0.1:3210'
+    ],
+  });
+  const tasks = sim.tasks;
+  const logs = sim.logs;
 
   const [activeBranch, setActiveBranch] = useState('feat/agent-orange-evolution');
   const [activeEnv, setActiveEnv] = useState('Local');
   const [isCommitting, setIsCommitting] = useState(false);
   const [commitMessage, setCommitMessage] = useState('feat: evolve Agent Orange 0 and integrate robust streaming');
-  const [logs, setLogs] = useState<string[]>([
-    'Local branch setup completed.',
-    'Docker daemon responsive on host port 2375.',
-    'Tunnel established: https://convex.openthink.internal -> 127.0.0.1:3210'
-  ]);
+
+  const appendLog = (message: string) => dispatchSim({ type: 'appendLog', message });
 
   // Simulate progress logic
   useEffect(() => {
     let interval: any;
     if (tasks.some(t => t.status === 'running')) {
-      interval = setInterval(() => {
-        setTasks(prev => {
-          const runningIdx = prev.findIndex(t => t.status === 'running');
-          if (runningIdx === -1) return prev;
-          const next = [...prev];
-          const finished = next[runningIdx];
-          next[runningIdx] = { ...finished, status: 'done' };
-          if (runningIdx + 1 < next.length) {
-            next[runningIdx + 1] = { ...next[runningIdx + 1], status: 'running' };
-            setLogs(l => [...l, `Task completed: ${finished.name}`]);
-          } else {
-            setLogs(l => [...l, `Task completed: ${finished.name}`]);
-          }
-          return next;
-        });
-      }, 8000);
+      interval = setInterval(() => dispatchSim({ type: 'tick' }), 8000);
     }
     return () => clearInterval(interval);
   }, [tasks]);
@@ -54,17 +70,17 @@ const PierrePanel = ({ isPoppedOut = false }: { isPoppedOut?: boolean }) => {
   const handleSimulateCommit = () => {
     if (isCommitting) return;
     setIsCommitting(true);
-    setLogs(l => [...l, `Preparing commit on ${activeBranch}...`]);
+    appendLog(`Preparing commit on ${activeBranch}...`);
     setTimeout(() => {
-      setLogs(l => [...l, `Changes staged. Writing objects...`]);
-    }, 1000);
-    setTimeout(() => {
-      setLogs(l => [...l, `Committed: ${commitMessage.slice(0, 30)}...`]);
-      setLogs(l => [...l, `Pushing to origin/${activeBranch}...`]);
-    }, 2000);
-    setTimeout(() => {
-      setLogs(l => [...l, `Successfully pushed. PR updated at https://github.com/openthink/harness/pull/1`]);
-      setIsCommitting(false);
+      appendLog(`Changes staged. Writing objects...`);
+      setTimeout(() => {
+        appendLog(`Committed: ${commitMessage.slice(0, 30)}...`);
+        appendLog(`Pushing to origin/${activeBranch}...`);
+        setTimeout(() => {
+          appendLog(`Successfully pushed. PR updated at https://github.com/openthink/harness/pull/1`);
+          setIsCommitting(false);
+        }, 1200);
+      }, 1200);
     }, 3500);
   };
 
@@ -79,7 +95,7 @@ const PierrePanel = ({ isPoppedOut = false }: { isPoppedOut?: boolean }) => {
       fontFamily: "'Inter', sans-serif"
     }}>
       {isPoppedOut && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', marginBottom: '24px', paddingBottom: '12px', borderBottom: '1px solid var(--border-subtle)' }}>
+        <div className="row-flex-between-gap-10">
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-tertiary))', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Layers size={16} color="white" />
@@ -87,14 +103,13 @@ const PierrePanel = ({ isPoppedOut = false }: { isPoppedOut?: boolean }) => {
             <span style={{ fontFamily: "'Outfit', sans-serif", fontSize: '1.15rem', fontWeight: 700 }}>Pierre - Environment & Git</span>
           </div>
           <button type="button"
-            className="btn btn-ghost"
+            className="btn btn-ghost row-flex-gap-6"
             onClick={() => {
               localStorage.setItem('openthink_popout_pierre', 'false');
               window.dispatchEvent(new Event('storage'));
               window.close();
             }}
             aria-label="Dock back"
-            style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', padding: '8px 14px', borderRadius: 'var(--radius-full)', background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', minHeight: 40, cursor: 'pointer', touchAction: 'manipulation' }}
           >
             <Dock size={14} /> Dock Back
           </button>
@@ -145,7 +160,7 @@ const PierrePanel = ({ isPoppedOut = false }: { isPoppedOut?: boolean }) => {
           {/* Branch selector */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Branch</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <div className="row-flex-gap-6">
               <GitBranch size={14} color="var(--accent-primary)" />
               <select
                 value={activeBranch}

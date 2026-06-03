@@ -133,7 +133,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 onClick={() => setIsSummariesExpanded(v => !v)}
                 onFocus={e => { (e.currentTarget.parentElement as HTMLElement).style.background = 'rgba(255,255,255,0.04)'; }}
                 onBlur={e => { (e.currentTarget.parentElement as HTMLElement).style.background = 'transparent'; }}
-                style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1, cursor: 'pointer', background: 'transparent', border: 'none', color: 'inherit', font: 'inherit', textTransform: 'inherit', letterSpacing: 'inherit', padding: 0, textAlign: 'left' }}
+                className="row-flex-gap-6"
               >
                 <Pin size={12} />
                 <span>Pinned Summaries</span>
@@ -229,7 +229,7 @@ const SidebarItem = ({ icon, label, badge, isSub = false, isActive = false, onCl
       cursor: 'pointer',
     }}
   >
-    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0, flex: 1 }}>
+    <div className="row-flex-gap-12">
       <span style={{ color: isActive ? 'var(--accent-primary)' : isSub ? 'var(--text-tertiary)' : 'inherit', display: 'flex', alignItems: 'center', flexShrink: 0 }}>{icon}</span>
       <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%' }}>{label}</span>
     </div>

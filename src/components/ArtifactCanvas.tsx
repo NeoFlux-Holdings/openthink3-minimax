@@ -144,7 +144,7 @@ const ArtifactCanvas: React.FC<ArtifactCanvasProps> = ({ activeCanvasTab, setAct
         
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-elevated)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div className="row-flex-gap-12">
             {activeTab === 'canvas' && (
               <>
                 <FileText size={16} color="var(--accent-secondary)" />
@@ -406,7 +406,7 @@ const SkillCard = ({ name, desc, status = 'live' }: { name: string, desc: string
       </div>
       <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', lineHeight: 1.3 }}>{desc}</div>
     </div>
-    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+    <div className="row-flex-gap-6">
       <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: status === 'live' ? '#10B981' : 'var(--text-tertiary)', boxShadow: status === 'live' ? '0 0 6px #10B981' : 'none' }} />
       <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{status === 'live' ? 'Live' : 'Planned'}</span>
     </div>
@@ -463,7 +463,7 @@ const SettingsPanel = () => {
               {hudActive ? <ToggleRight size={24} /> : <ToggleLeft size={24} />}
             </button>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+          <div className="row-flex-between-gap-12">
             <span style={{ fontSize: '0.8rem', flex: 1 }}>Selected Color Theme</span>
             <select
               value={theme}

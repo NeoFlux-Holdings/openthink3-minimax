@@ -44,12 +44,10 @@ const AppView = () => {
 
   const [recentThreads, setRecentThreads] = useState<ThreadInfo[]>(() => {
     try {
-      const saved = localStorage.getItem('openthink_threads');
+      const saved = localStorage.getItem('openthink_threads:v1');
       if (!saved) return [];
       const parsed = JSON.parse(saved);
-      if (parsed && typeof parsed === 'object' && parsed.__v === 1 && Array.isArray(parsed.data)) {
-        return parsed.data;
-      }
+      if (Array.isArray(parsed)) return parsed;
       return [];
     } catch {
       return [];
@@ -57,7 +55,7 @@ const AppView = () => {
   });
 
   useEffect(() => {
-    localStorage.setItem('openthink_threads', JSON.stringify({ __v: 1, data: recentThreads }));
+    localStorage.setItem('openthink_threads:v1', JSON.stringify(recentThreads));
   }, [recentThreads]);
 
   useEffect(() => {

@@ -16,7 +16,7 @@ const MarketingView = () => {
         backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
         position: 'sticky', top: 0, zIndex: 50, gap: 12, flexWrap: 'wrap',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div className="row-flex-gap-12">
           <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-tertiary))', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Bot size={20} color="white" />
           </div>

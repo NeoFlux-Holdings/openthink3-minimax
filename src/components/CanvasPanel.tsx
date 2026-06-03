@@ -61,10 +61,9 @@ const CanvasPanel: React.FC<CanvasPanelProps> = ({ isPoppedOut = false }) => {
             </div>
             <span style={{ fontFamily: "'Outfit', sans-serif", fontSize: '1.15rem', fontWeight: 700 }}>Workspace Intel Canvas</span>
           </div>
-          <button type="button" 
-            className="btn btn-ghost" 
+          <button type="button"
+            className="btn btn-ghost row-flex-gap-6"
             onClick={handleDock}
-            style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', padding: '6px 12px', borderRadius: 'var(--radius-full)', background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}
           >
             <Layers size={14} /> Dock Back
           </button>
@@ -73,7 +72,7 @@ const CanvasPanel: React.FC<CanvasPanelProps> = ({ isPoppedOut = false }) => {
 
       {/* Focus & Sprint Section */}
       <div className="glass-panel" style={{ padding: '16px', borderRadius: 'var(--radius-md)', background: 'rgba(36,36,36,0.3)', marginBottom: '16px' }}>
-        <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-tertiary)', letterSpacing: '0.05em', fontWeight: 600, marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="section-header" style={{ marginBottom: '12px' }}>
           <span>Active Cognitive Focus</span>
           <Eye size={14} color="var(--accent-secondary)" />
         </div>
@@ -84,7 +83,7 @@ const CanvasPanel: React.FC<CanvasPanelProps> = ({ isPoppedOut = false }) => {
 
       {/* Attention & Environment Checklist */}
       <div className="glass-panel" style={{ padding: '16px', borderRadius: 'var(--radius-md)', background: 'rgba(36,36,36,0.3)', marginBottom: '16px' }}>
-        <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-tertiary)', letterSpacing: '0.05em', fontWeight: 600, marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="section-header" style={{ marginBottom: '12px' }}>
           <span>Attention Checklist</span>
           <CheckSquare size={14} color="var(--accent-primary)" />
         </div>
@@ -106,7 +105,7 @@ const CanvasPanel: React.FC<CanvasPanelProps> = ({ isPoppedOut = false }) => {
 
       {/* Durable Objects Git Storage Spec */}
       <div className="glass-panel" style={{ padding: '16px', borderRadius: 'var(--radius-md)', background: 'rgba(36,36,36,0.3)', marginBottom: '16px' }}>
-        <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-tertiary)', letterSpacing: '0.05em', fontWeight: 600, marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="section-header" style={{ marginBottom: '12px' }}>
           <span>Durable Objects SQLite & Git Integration Spec</span>
           <Code size={14} color="var(--accent-tertiary)" />
         </div>
@@ -126,7 +125,7 @@ const CanvasPanel: React.FC<CanvasPanelProps> = ({ isPoppedOut = false }) => {
 
       {/* Sync Notepad */}
       <div className="glass-panel" style={{ flex: 1, padding: '16px', borderRadius: 'var(--radius-md)', background: 'rgba(36,36,36,0.3)', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-tertiary)', letterSpacing: '0.05em', fontWeight: 600, marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="section-header" style={{ marginBottom: '12px' }}>
           <span>Collaborative Scratchpad (Synced Live)</span>
           <Edit3 size={14} color="var(--accent-secondary)" />
         </div>

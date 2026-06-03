@@ -248,7 +248,7 @@ const PluginPanel: React.FC = () => {
 
               {/* Info */}
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' }}>
+                <div className="row-flex-gap-6">
                   <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)' }}>{plugin.name}</span>
                   {plugin.premium && (
                     <span style={{ background: 'linear-gradient(135deg, #F59E0B, #EF4444)', color: 'white', fontSize: '0.75rem', fontWeight: 800, padding: '1px 5px', borderRadius: '3px', textTransform: 'uppercase' }}>PRO</span>
@@ -262,7 +262,7 @@ const PluginPanel: React.FC = () => {
               </div>
 
               {/* Controls */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+              <div className="row-flex-gap-6">
                 <button type="button"
                   onClick={() => setExpandedId(isExpanded ? null : plugin.id)}
                   style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', display: 'flex' }}
@@ -337,7 +337,7 @@ const PluginPanel: React.FC = () => {
                 )}
 
                 {/* Docs link */}
-                <a href={plugin.link} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', color: plugin.iconColor, textDecoration: 'none', opacity: 0.8 }}>
+                <a href={plugin.link} target="_blank" rel="noreferrer" className="row-flex-gap-4">
                   <ExternalLink size={11} /> View on GitHub
                 </a>
               </div>

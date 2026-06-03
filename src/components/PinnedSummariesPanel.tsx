@@ -91,9 +91,8 @@ const PinnedSummariesPanel = ({ isPoppedOut = false, onClose }: { isPoppedOut?: 
 
         {isPoppedOut && (
           <button type="button"
-            className="btn btn-ghost"
+            className="btn btn-ghost row-flex-gap-6"
             onClick={handleDock}
-            style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', padding: '6px 12px', borderRadius: 'var(--radius-full)', background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', minHeight: 36 }}
           >
             <Dock size={14} /> Dock Back
           </button>

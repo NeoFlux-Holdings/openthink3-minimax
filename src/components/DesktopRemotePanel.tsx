@@ -269,15 +269,7 @@ const DesktopRemotePanel: React.FC = () => {
           </div>
           <button type="button"
             onClick={toggleTunnel}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '6px',
-              background: tunnelActive ? 'rgba(239,68,68,0.1)' : 'var(--accent-primary)',
-              border: tunnelActive ? '1px solid rgba(239,68,68,0.2)' : 'none',
-              color: tunnelActive ? '#EF4444' : 'white',
-              borderRadius: '20px', padding: '8px 18px',
-              fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer',
-              transition: 'background ease 0.2s, color ease 0.2s, border-color ease 0.2s, transform ease 0.2s, opacity ease 0.2s, box-shadow ease 0.2s',
-            }}
+            className="row-flex-gap-6"
           >
             {tunnelActive
               ? <><Square size={12} fill="currentColor" /> Disconnect</>

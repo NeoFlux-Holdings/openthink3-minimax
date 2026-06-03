@@ -113,7 +113,7 @@ const HarnessPanel: React.FC<HarnessPanelProps> = ({ isPoppedOut = false, select
       fontFamily: "'Inter', sans-serif"
     }}>
       {isPoppedOut && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', marginBottom: '20px', paddingBottom: '12px', borderBottom: '1px solid var(--border-subtle)' }}>
+        <div className="row-flex-between-gap-10">
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Cpu size={16} color="white" />
@@ -121,14 +121,13 @@ const HarnessPanel: React.FC<HarnessPanelProps> = ({ isPoppedOut = false, select
             <span style={{ fontFamily: "'Outfit', sans-serif", fontSize: '1.15rem', fontWeight: 700 }}>Agent Intelligence</span>
           </div>
           <button type="button"
-            className="btn btn-ghost"
+            className="btn btn-ghost row-flex-gap-6"
             onClick={() => {
               localStorage.setItem('openthink_popout_harness', 'false');
               window.dispatchEvent(new Event('storage'));
               window.close();
             }}
             aria-label="Dock back"
-            style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', padding: '8px 14px', borderRadius: 'var(--radius-full)', background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', minHeight: 40, cursor: 'pointer', touchAction: 'manipulation' }}
           >
             <Dock size={14} /> Dock Back
           </button>
@@ -266,7 +265,7 @@ const HarnessPanel: React.FC<HarnessPanelProps> = ({ isPoppedOut = false, select
 
                 <div style={{ zIndex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.04)' }}>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>Ping Latency</span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <div className="row-flex-gap-6">
                     <div style={{
                       width: '6px', height: '6px', borderRadius: '50%',
                       background: '#10B981',
@@ -288,7 +287,7 @@ const HarnessPanel: React.FC<HarnessPanelProps> = ({ isPoppedOut = false, select
 
       {/* Live Inference Metrics */}
       <div className="glass-panel" style={{ padding: '16px', borderRadius: 'var(--radius-md)', background: 'rgba(36,36,36,0.3)', marginBottom: '16px' }}>
-        <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-tertiary)', letterSpacing: '0.05em', fontWeight: 600, marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="section-header" style={{ marginBottom: '16px' }}>
           <span>Live Inference Metrics</span>
           <Activity size={14} color="var(--accent-tertiary)" />
         </div>

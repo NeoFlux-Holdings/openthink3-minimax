@@ -95,7 +95,7 @@ const AccountHub: React.FC<AccountHubProps> = ({ isStandalone = false }) => {
 
       {/* Cloudflare Edge Infrastructure HUD */}
       <div className="glass-panel" style={{ padding: '20px', borderRadius: '12px', background: 'rgba(36,36,36,0.3)', border: '1px solid var(--border-subtle)' }}>
-        <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-tertiary)', letterSpacing: '0.05em', fontWeight: 600, marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="section-header" style={{ marginBottom: '16px' }}>
           <span>Cloudflare Edge Infrastructure HUD</span>
           <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#10B981', fontSize: '0.75rem' }}>
             <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#10B981', boxShadow: '0 0 6px #10B981' }} /> Live
@@ -103,7 +103,7 @@ const AccountHub: React.FC<AccountHubProps> = ({ isStandalone = false }) => {
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {/* Worker Endpoint */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+          <div className="row-flex-between-gap-10">
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
               <Cloud size={16} color="var(--accent-primary)" />
               <div>
@@ -118,7 +118,7 @@ const AccountHub: React.FC<AccountHubProps> = ({ isStandalone = false }) => {
           </div>
 
           {/* Durable Object SQLite */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+          <div className="row-flex-between-gap-10">
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
               <Database size={16} color="var(--accent-secondary)" />
               <div>
@@ -133,7 +133,7 @@ const AccountHub: React.FC<AccountHubProps> = ({ isStandalone = false }) => {
           </div>
 
           {/* R2 Backup snapshots */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+          <div className="row-flex-between-gap-10">
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
               <Shield size={16} color="var(--accent-tertiary)" />
               <div>
@@ -222,8 +222,8 @@ const AccountHub: React.FC<AccountHubProps> = ({ isStandalone = false }) => {
       }}>
         <div style={{ maxWidth: '650px', width: '100%' }}>
           {/* Standalone Header */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '28px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '16px' }}>
-            <a href="/app" style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+          <div className="row-flex-gap-12">
+            <a href="/app" className="row-flex-gap-6">
               <ArrowLeft size={16} /> Return to Harness
             </a>
             <span style={{ color: 'var(--text-tertiary)' }}>|</span>

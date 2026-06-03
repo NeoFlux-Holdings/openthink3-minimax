@@ -43,7 +43,8 @@ const ThreadFeed: React.FC<ThreadFeedProps> = ({ threadId, initialPrompt, thread
     setInput(value);
     localStorage.setItem(`openthink_draft_input_${threadId}`, value);
   };
-  const [isLoading, setIsLoading] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
+  const isLoading = pendingCount > 0;
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -56,9 +57,9 @@ const ThreadFeed: React.FC<ThreadFeedProps> = ({ threadId, initialPrompt, thread
 
   const loadHistory = useEffectEvent(async () => {
     if (initialPrompt) return;
+    setPendingCount(c => c + 1);
+    setApiError(null);
     try {
-      setIsLoading(true);
-      setApiError(null);
       const response = await fetch(`${getApiUrl()}/api/thread/${threadId}/history`);
       if (response.ok) {
         const data = await response.json();
@@ -77,7 +78,7 @@ const ThreadFeed: React.FC<ThreadFeedProps> = ({ threadId, initialPrompt, thread
       console.error("Failed to load thread history:", err);
       setApiError(err instanceof Error ? err.message : String(err));
     } finally {
-      setIsLoading(false);
+      setPendingCount(c => c - 1);
     }
   });
 
@@ -99,10 +100,10 @@ const ThreadFeed: React.FC<ThreadFeedProps> = ({ threadId, initialPrompt, thread
   const handleSend = async (overrideInput?: string) => {
     const userMsg = overrideInput || input;
     if (!userMsg.trim() || isLoading) return;
-    
+
     setInput('');
     localStorage.removeItem(`openthink_draft_input_${threadId}`);
-    setIsLoading(true);
+    setPendingCount(c => c + 1);
 
     const newMsgId = Date.now().toString();
     setMessages(prev => [...prev, { id: newMsgId, isUser: true, content: userMsg }]);
@@ -162,11 +163,11 @@ const ThreadFeed: React.FC<ThreadFeedProps> = ({ threadId, initialPrompt, thread
       console.error(error);
       const errMsg = error instanceof Error ? error.message : String(error);
       setApiError(errMsg);
-      setMessages(prev => prev.map(m => 
+      setMessages(prev => prev.map(m =>
         m.id === agentMsgId ? { ...m, content: 'Error communicating with the agent.', status: undefined } : m
       ));
     } finally {
-      setIsLoading(false);
+      setPendingCount(c => c - 1);
     }
   };
 
@@ -200,7 +201,7 @@ const ThreadFeed: React.FC<ThreadFeedProps> = ({ threadId, initialPrompt, thread
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
             minWidth: 0, flex: 1,
           }}>{threadTitle || 'New Conversation'}</h2>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(16, 185, 129, 0.1)', color: '#10B981', padding: '2px 8px', borderRadius: 'var(--radius-full)', fontSize: '0.75rem', fontWeight: 600, flexShrink: 0 }}>
+          <div className="row-flex-gap-6">
             <div className="pulse-dot" style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10B981' }} />
             Live
           </div>

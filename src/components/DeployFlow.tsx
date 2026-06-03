@@ -266,7 +266,7 @@ const DeployFlow = () => {
 
           {step === 2 && (
             <div className="fade-in">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+              <div className="row-flex-gap-12">
                 <Key color="var(--accent-secondary)" />
                 <h2 style={{ fontSize: '1.5rem', margin: 0 }}>Cloudflare Access</h2>
               </div>
@@ -298,7 +298,7 @@ const DeployFlow = () => {
 
           {step === 3 && (
             <div className="fade-in">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+              <div className="row-flex-gap-12">
                 <Globe color="var(--accent-tertiary)" />
                 <h2 style={{ fontSize: '1.5rem', margin: 0 }}>Domain Setup</h2>
               </div>
@@ -423,14 +423,14 @@ const DeployFlow = () => {
               <div style={{ marginBottom: '24px' }}>
                 <button type="button" 
                   onClick={() => setShowAdvanced(!showAdvanced)}
-                  style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', color: 'var(--text-tertiary)', cursor: 'pointer', padding: '4px 0', textDecoration: 'underline' }}
+                  className="row-flex-gap-6"
                 >
                   {showAdvanced ? 'Hide Advanced Config ▴' : 'Show Advanced Config ▾'}
                 </button>
                 
                 {showAdvanced && (
                   <div className="glass-panel fade-in" style={{ marginTop: '12px', padding: '16px', borderRadius: '8px', background: 'rgba(255,255,255,0.01)', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                    <div className="row-flex-between-gap-10">
                       <div style={{ flex: 1 }}>
                         <span style={{ fontSize: '0.8rem', fontWeight: 600, display: 'block', color: 'var(--text-primary)' }}>CF Access bypass</span>
                         <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>Allow public connections without Cloudflare Access auth headers.</span>
@@ -476,7 +476,7 @@ const DeployFlow = () => {
 
           {step === 4 && !isDeploying && (
             <div className="fade-in">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+              <div className="row-flex-gap-12">
                 <CreditCard color="#10B981" />
                 <h2 style={{ fontSize: '1.5rem', margin: 0 }}>Review & Deploy</h2>
               </div>

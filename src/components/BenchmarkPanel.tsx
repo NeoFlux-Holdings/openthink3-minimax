@@ -236,13 +236,7 @@ const BenchmarkPanel: React.FC = () => {
           <button type="button"
             onClick={runEval}
             disabled={runningEval}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '6px',
-              background: runningEval ? 'rgba(249,115,22,0.1)' : 'var(--accent-primary)',
-              border: runningEval ? '1px solid rgba(249,115,22,0.3)' : 'none',
-              color: 'white', borderRadius: '6px', padding: '7px 14px',
-              fontSize: '0.78rem', fontWeight: 700, cursor: runningEval ? 'default' : 'pointer'
-            }}
+            className="row-flex-gap-6"
           >
             {runningEval ? <RefreshCw size={12} className="spin" /> : <Play size={12} />}
             {runningEval ? 'Running...' : 'Run Now'}
