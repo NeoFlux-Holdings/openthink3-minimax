@@ -230,10 +230,7 @@ const SidebarItem = ({ icon, label, badge, isSub = false, isActive = false, onCl
       <span className="label-truncate">{label}</span>
     </div>
     {badge && (
-      <span className="mono" style={{
-        background: 'var(--accent-primary)', color: '#000', fontSize: '0.7rem',
-        fontWeight: 700, padding: '1px 5px', letterSpacing: '0.05em'
-      }}>{badge}</span>
+      <span className="mono sidebar-item-badge">{badge}</span>
     )}
   </button>
 );

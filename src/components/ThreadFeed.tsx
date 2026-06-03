@@ -1,8 +1,33 @@
 import React, { useRef, useEffect, useEffectEvent, useReducer } from 'react';
 import { useNavigate } from 'react-router-dom';
-import ReactMarkdown from 'react-markdown';
-import { ChevronRight, Globe, CheckCircle2 } from 'lucide-react';
-import { ThreadHeader, Composer } from './ThreadFeedParts';
+import { ThreadHeader, Composer, MessageBubble, SkillInjection, PluginInjection, MessageReasoning, MessageTools } from './ThreadFeedParts';
+import {
+  buildSkillInvocation,
+  skillWorkerUrl,
+  type Skill,
+} from '../lib/skills';
+import { dispatchChatMessageBefore, summarizePluginHooks } from '../lib/plugins';
+
+type SkillInjection = {
+  skill: Skill;
+  summary: string;
+};
+
+type PluginInjection = {
+  results: { plugin: string; hook: string; handler: string; captured: boolean; detail?: string }[];
+  summary: string;
+};
+
+interface MessageData {
+  id: string;
+  isUser: boolean;
+  content: string;
+  status?: string;
+  reasoning?: string[];
+  tools?: { name: string, icon: string }[];
+  skillInjection?: SkillInjection;
+  pluginInjection?: PluginInjection;
+}
 
 const getApiUrl = () => {
   const custom = localStorage.getItem('openthink_api_url');
@@ -20,15 +45,6 @@ interface ThreadFeedProps {
   threadTitle?: string;
   onOpenMenu?: () => void;
   isMobile?: boolean;
-}
-
-interface MessageData {
-  id: string;
-  isUser: boolean;
-  content: string;
-  status?: string;
-  reasoning?: string[];
-  tools?: { name: string, icon: string }[];
 }
 
 type ThreadState = { messages: MessageData[]; apiError: string | null };
@@ -127,6 +143,50 @@ const ThreadFeed: React.FC<ThreadFeedProps> = ({ threadId, initialPrompt, thread
     onInitialPrompt(initialPrompt ?? '');
   }, [initialPrompt]);
 
+  const runSkill = async (userMsg: string, userMsgId: string): Promise<{ summary: string; skill: Skill } | null> => {
+    const hookResults = await dispatchChatMessageBefore(userMsg, threadId);
+    const summary = summarizePluginHooks(hookResults);
+    if (summary) {
+      setMessages(prev => prev.map(m =>
+        m.id === userMsgId
+          ? { ...m, pluginInjection: { results: hookResults, summary } }
+          : m
+      ));
+    }
+    const invocation = buildSkillInvocation(userMsg);
+    if (!invocation) return null;
+    const { skill, request } = invocation;
+    setMessages(prev => prev.map(m =>
+      m.id === userMsgId
+        ? { ...m, skillInjection: { skill, summary: `Calling ${skill.workerEndpoint}…` } }
+        : m
+    ));
+    try {
+      const res = await fetch(skillWorkerUrl(skill, getApiUrl()), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: request.prompt, config: request.config, threadId }),
+      });
+      if (!res.ok) throw new Error(`Skill ${skill.id} responded ${res.status}`);
+      const data = await res.json();
+      const summary = summarizeSkillResult(skill, data);
+      setMessages(prev => prev.map(m =>
+        m.id === userMsgId
+          ? { ...m, skillInjection: { skill, summary } }
+          : m
+      ));
+      return { summary, skill };
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      setMessages(prev => prev.map(m =>
+        m.id === userMsgId
+          ? { ...m, skillInjection: { skill, summary: `Skill failed: ${reason}` } }
+          : m
+      ));
+      return null;
+    }
+  };
+
   const handleSend = async (overrideInput?: string) => {
     const userMsg = overrideInput || getInput();
     if (!userMsg.trim() || isLoading) return;
@@ -142,11 +202,15 @@ const ThreadFeed: React.FC<ThreadFeedProps> = ({ threadId, initialPrompt, thread
 
     try {
       setApiError(null);
+      const skillResult = await runSkill(userMsg, newMsgId);
+      const systemContext = skillResult
+        ? `[Skill ${skillResult.skill.id} injected]\n${skillResult.summary}`
+        : undefined;
       const activeModel = localStorage.getItem('openthink_active_model') || '@cf/meta/llama-3.1-8b-instruct';
       const response = await fetch(`${getApiUrl()}/api/thread/${threadId}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: userMsg, model: activeModel })
+        body: JSON.stringify({ prompt: userMsg, model: activeModel, system: systemContext })
       });
 
       if (!response.body) throw new Error('No readable stream');
@@ -265,26 +329,12 @@ const ThreadFeed: React.FC<ThreadFeedProps> = ({ threadId, initialPrompt, thread
         )}
 
         {messages.map(msg => (
-          <Message key={msg.id} isUser={msg.isUser} status={msg.status} content={msg.content}>
-            {msg.reasoning && (
-              <details className="thread-reasoning">
-                <summary className="thread-reasoning-summary">
-                  <ChevronRight size={16} /> Reasoned
-                </summary>
-                <div className="thread-reasoning-body">
-                  {msg.reasoning.map((r) => <div key={r}>{r}</div>)}
-                </div>
-              </details>
-            )}
-
-            {msg.tools && (
-              <div className="thread-tools">
-                {msg.tools.map((t) => (
-                  <ToolChip key={t.name} icon={t.icon === 'globe' ? <Globe size={14} /> : <CheckCircle2 size={14} color="#10B981" />} label={t.name} />
-                ))}
-              </div>
-            )}
-          </Message>
+          <MessageBubble key={msg.id} isUser={msg.isUser} status={msg.status} content={msg.content}>
+            {msg.skillInjection && <SkillInjection id={msg.skillInjection.skill.id} summary={msg.skillInjection.summary} />}
+            {msg.pluginInjection && <PluginInjection summary={msg.pluginInjection.summary} />}
+            {msg.reasoning && <MessageReasoning reasoning={msg.reasoning} />}
+            {msg.tools && <MessageTools tools={msg.tools} />}
+          </MessageBubble>
         ))}
         <div ref={messagesEndRef} />
       </div>
@@ -299,32 +349,33 @@ const ThreadFeed: React.FC<ThreadFeedProps> = ({ threadId, initialPrompt, thread
   );
 };
 
-const Message = ({ isUser, content, children, status }: { isUser: boolean, content: string, children?: React.ReactNode, status?: string }) => (
-  <div style={{ display: 'flex', gap: '16px', maxWidth: '85%', alignSelf: isUser ? 'flex-end' : 'flex-start' }}>
-    {!isUser && (
-      <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-tertiary))', flexShrink: 0 }} />
-    )}
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '100%' }}>
-      {status && (
-        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-          <div className="pulse-dot" style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--accent-secondary)' }} />
-          {status}
-        </div>
-      )}
-      <div
-        className="thread-feed-message message-bubble" data-user={isUser}
-      >
-        {isUser ? content : <ReactMarkdown>{content}</ReactMarkdown>}
-      </div>
-      {children}
-    </div>
-  </div>
-);
-
-const ToolChip = ({ icon, label }: { icon: React.ReactNode, label: string }) => (
-  <div className="pill-clickable">
-    {icon} {label}
-  </div>
-);
+const summarizeSkillResult = (skill: Skill, data: any): string => {
+  if (!data || typeof data !== 'object') return 'returned no data';
+  if (skill.id === 'gbrain-search') {
+    const count = Array.isArray(data.results)
+      ? data.results.length
+      : Array.isArray(data)
+        ? data.length
+        : 0;
+    return `injected ${count} ${count === 1 ? 'page' : 'pages'}`;
+  }
+  if (skill.id === 'gbrain-think') {
+    const answer = typeof data.answer === 'string' ? data.answer : data.response;
+    if (typeof answer === 'string') return `synthesis: ${answer.slice(0, 120)}${answer.length > 120 ? '…' : ''}`;
+    return 'synthesis complete';
+  }
+  if (skill.id === 'gbrain-capture') {
+    return data.slug ? `captured as ${data.slug}` : 'captured';
+  }
+  if (skill.id === 'gstack-run') {
+    if (typeof data.task === 'string') return `ran ${data.task}`;
+    if (typeof data.status === 'string') return `status: ${data.status}`;
+    return 'execution complete';
+  }
+  if (skill.id === 'gbrain-evals') {
+    return typeof data.scorecard === 'object' ? 'scorecard posted' : 'benchmark complete';
+  }
+  return 'complete';
+};
 
 export default ThreadFeed;

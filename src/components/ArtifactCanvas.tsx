@@ -7,6 +7,7 @@ import HarnessPanel from './HarnessPanel';
 import CanvasPanel from './CanvasPanel';
 import AccountHub from './AccountHub';
 import DesktopRemotePanel from './DesktopRemotePanel';
+import SkillsPanel from './SkillsPanel';
 
 import React, { useState, useEffect, useReducer } from 'react';
 
@@ -369,38 +370,6 @@ const LearningPanel = () => {
 /* ==========================================================================
    Skills Subpanel - Registered MCP Tools
    ========================================================================== */
-const SkillsPanel = () => {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', color: 'var(--text-secondary)' }}>
-      <p style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)', lineHeight: 1.4, margin: 0 }}>
-        Active Model Context Protocol (MCP) clients and Cognitive skills consolidated by Agent Orange 0.
-      </p>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        <SkillCard name="check_context" desc="Live orchestrator tool. Surfaces cross-thread context from KV (thread:* and memory:* keys)." status="live" />
-        <SkillCard name="git_branch_stack" desc="Stacked branch environments. Registers a DO-backed git tool that tracks diff structures across feature stacks." status="planned" />
-        <SkillCard name="eval_runner" desc="POST /api/eval/run streams scorecards from exe.dev gbrain-evals runner into KV." status="live" />
-        <SkillCard name="plugin_registry" desc="Community plugins fetched from a URL and persisted in plugins:registry KV key." status="live" />
-      </div>
-    </div>
-  );
-};
-
-const SkillCard = ({ name, desc, status = 'live' }: { name: string, desc: string, status?: 'live' | 'planned' }) => (
-  <div className="glass-panel glass-card glass-card--md">
-    <div style={{ flex: 1 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-        <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'monospace' }}>{name}</span>
-        <span style={{ background: 'rgba(16,185,129,0.1)', color: '#10B981', padding: '2px 6px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600 }}>mcp</span>
-      </div>
-      <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', lineHeight: 1.3 }}>{desc}</div>
-    </div>
-    <div className="row-flex-gap-6">
-      <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: status === 'live' ? '#10B981' : 'var(--text-tertiary)', boxShadow: status === 'live' ? '0 0 6px #10B981' : 'none' }} />
-      <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{status === 'live' ? 'Live' : 'Planned'}</span>
-    </div>
-  </div>
-);
 
 /* ==========================================================================
    Settings Subpanel - HUD switches & Credentials

@@ -1,5 +1,6 @@
 import React from 'react';
-import { Menu, MoreHorizontal } from 'lucide-react';
+import { Menu, MoreHorizontal, Globe, CheckCircle2, ChevronRight, Sparkles, Puzzle } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
 
 export const ThreadHeader: React.FC<{
   isMobile?: boolean;
@@ -80,6 +81,76 @@ export const Composer: React.FC<{
       <span>Toggle Train Mode (Ctrl+T)</span>
       <span>~ $0.02 cost</span>
     </div>
+  </div>
+);
+
+export const MessageBubble: React.FC<{
+  isUser: boolean;
+  content: string;
+  status?: string;
+  children?: React.ReactNode;
+}> = ({ isUser, content, children, status }) => (
+  <div style={{ display: 'flex', gap: '16px', maxWidth: '85%', alignSelf: isUser ? 'flex-end' : 'flex-start' }}>
+    {!isUser && (
+      <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-tertiary))', flexShrink: 0 }} />
+    )}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '100%' }}>
+      {status && (
+        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+          <div className="pulse-dot" style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--accent-secondary)' }} />
+          {status}
+        </div>
+      )}
+      <div
+        className="thread-feed-message message-bubble" data-user={isUser}
+      >
+        {isUser ? content : <ReactMarkdown>{content}</ReactMarkdown>}
+      </div>
+      {children}
+    </div>
+  </div>
+);
+
+export const ToolChip: React.FC<{ icon: React.ReactNode; label: string }> = ({ icon, label }) => (
+  <div className="pill-clickable">
+    {icon} {label}
+  </div>
+);
+
+export const SkillInjection: React.FC<{ id: string; summary: string }> = ({ id, summary }) => (
+  <div className="skill-injection">
+    <Sparkles size={12} />
+    {id} · {summary}
+  </div>
+);
+
+export const PluginInjection: React.FC<{ summary: string }> = ({ summary }) => (
+  <div className="plugin-injection">
+    <Puzzle size={12} />
+    plugin hooks · {summary}
+  </div>
+);
+
+export const MessageReasoning: React.FC<{ reasoning: string[] }> = ({ reasoning }) => (
+  <details className="thread-reasoning">
+    <summary className="thread-reasoning-summary">
+      <ChevronRight size={16} /> Reasoned
+    </summary>
+    <div className="thread-reasoning-body">
+      {reasoning.map((r) => <div key={r}>{r}</div>)}
+    </div>
+  </details>
+);
+
+export const MessageTools: React.FC<{ tools: { name: string; icon: string }[] }> = ({ tools }) => (
+  <div className="thread-tools">
+    {tools.map((t) => (
+      <ToolChip
+        key={t.name}
+        icon={t.icon === 'globe' ? <Globe size={14} /> : <CheckCircle2 size={14} color="#10B981" />}
+        label={t.name}
+      />
+    ))}
   </div>
 );
 
