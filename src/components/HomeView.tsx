@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Menu, Paperclip, Play, PenTool, Search, Image as ImageIcon, Globe, Mail } from 'lucide-react';
+import { Menu, Paperclip, Play, PenTool, Search, Image as ImageIcon, Globe, Mail, FileText, Sparkles } from 'lucide-react';
 import type { ThreadInfo } from '../App';
 
 interface HomeViewProps {
@@ -22,7 +22,7 @@ const HomeView: React.FC<HomeViewProps> = ({ onStartThread, recentThreads, onSel
   };
 
   return (
-    <div className="home-view home-view">
+    <div className="home-view">
 
       {isMobile && (
         <button type="button"
@@ -34,52 +34,53 @@ const HomeView: React.FC<HomeViewProps> = ({ onStartThread, recentThreads, onSel
         </button>
       )}
 
-      <div style={{ maxWidth: '720px', width: '100%', display: 'flex', flexDirection: 'column', gap: isMobile ? '20px' : '32px' }}>
+      <div style={{ maxWidth: '760px', width: '100%', display: 'flex', flexDirection: 'column', gap: isMobile ? '20px' : '28px' }}>
 
-        <div style={{ textAlign: 'center' }}>
-          <h1 style={{
-            fontSize: isMobile ? '1.875rem' : '3rem', marginBottom: '8px',
-            color: 'var(--text-primary)',
-            lineHeight: 1.15, padding: isMobile ? '0 8px' : 0,
-          }}>
-            What do you need done?
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          <div className="hero-eyebrow">
+            <span className="status-dot status-dot--live idle-pulse" style={{ width: 5, height: 5 }} />
+            agent online · brain synced
+          </div>
+          <h1 className="hero-title">
+            What do you need <span className="accent">done</span>?
           </h1>
-          <p style={{
-            color: 'var(--text-secondary)',
-            fontSize: isMobile ? '0.95rem' : '1.125rem',
-            margin: 0, padding: isMobile ? '0 8px' : 0,
-          }}>
-            Persona agent ready. Start typing or use a template.
+          <p className="hero-sub">
+            A persistent brain with skills, a knowledge graph, and execution. Tell it what to do; it picks the path.
           </p>
+
+          <div className="hero-stats">
+            <div className="hero-stat">
+              <span className="hero-stat__value accent">42<span className="unit">skills</span></span>
+              <span className="hero-stat__label">loaded</span>
+            </div>
+            <div className="hero-stat">
+              <span className="hero-stat__value">146,646<span className="unit">pg</span></span>
+              <span className="hero-stat__label">brain</span>
+            </div>
+            <div className="hero-stat">
+              <span className="hero-stat__value">P@5 49.1<span className="unit">%</span></span>
+              <span className="hero-stat__label">retrieval</span>
+            </div>
+            <div className="hero-stat">
+              <span className="hero-stat__value">R@5 97.9<span className="unit">%</span></span>
+              <span className="hero-stat__label">recall</span>
+            </div>
+          </div>
         </div>
 
-        <div className="glass-panel" style={{ padding: '4px', display: 'flex', flexDirection: 'column', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-lg)' }}>
-          <form onSubmit={handleSubmit} style={{ position: 'relative', display: 'flex', flexDirection: 'column' }}>
-            
-            <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '8px 12px 0' }}>
-              <div style={{ display: 'flex', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-full)', padding: '4px' }}>
-                {(['Auto', 'Plan first', 'Train'] as const).map(mode => (
-                  <button
-                    key={mode}
-                    type="button"
-                    onClick={() => setTaskMode(mode)}
-                    className="mode-tab" data-active={taskMode === mode}
-                  >
-                    {mode}
-                  </button>
-                ))}
-              </div>
+        <div className="cmd-palette">
+          <div className="cmd-palette-header">
+            <span className="dot-r" /><span className="dot-y" /><span className="dot-g" />
+            <span className="title">openthink3 · prompt</span>
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+              <span style={{ color: 'var(--accent-primary)' }}>●</span>
+              <span>{taskMode}</span>
             </div>
-
+          </div>
+          <form onSubmit={handleSubmit} className="cmd-palette-body">
             <textarea
-              className="input-field"
-              placeholder="Describe your task..."
-              style={{
-                background: 'transparent', border: 'none', boxShadow: 'none',
-                minHeight: isMobile ? '100px' : '120px',
-                fontSize: isMobile ? '1rem' : '1.125rem',
-                padding: isMobile ? '14px 16px' : '16px 20px',
-              }}
+              className="cmd-palette-textarea"
+              placeholder="> describe the task. Enter to send, Shift+Enter for newline."
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => {
@@ -88,47 +89,73 @@ const HomeView: React.FC<HomeViewProps> = ({ onStartThread, recentThreads, onSel
                   handleSubmit(e);
                 }
               }}
-             aria-label="Describe your task" />
-
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: isMobile ? '8px 12px 12px' : '12px 20px 16px' }}>
-              <button type="button" className="btn btn-ghost" aria-label="Attach file" style={{ padding: '8px', minWidth: 40, minHeight: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Paperclip size={20} />
-              </button>
-
-              <button type="submit" className="btn btn-primary" style={{ borderRadius: 'var(--radius-full)', padding: isMobile ? '10px 18px' : '10px 24px', minHeight: 44 }} disabled={!input.trim()}>
-                Start <Play size={16} fill="currentColor" />
-              </button>
+              aria-label="Describe your task"
+            />
+            <div className="cmd-palette-footer">
+              <div className="cmd-mode-tabs">
+                {(['Auto', 'Plan first', 'Train'] as const).map(mode => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setTaskMode(mode)}
+                    className="cmd-mode-tab"
+                    data-active={taskMode === mode}
+                  >
+                    {mode}
+                  </button>
+                ))}
+              </div>
+              <div className="hint home-attach-wrap">
+                <button type="button" className="home-icon-btn" aria-label="Attach file">
+                  <Paperclip size={16} />
+                </button>
+                <button type="submit" className="cmd-send" disabled={!input.trim()}>
+                  <Play size={12} fill="currentColor" /> send
+                </button>
+              </div>
             </div>
           </form>
         </div>
 
-        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', justifyContent: 'center' }}>
-          <QuickAction icon={<PenTool size={16} />} label="Write something" onClick={() => setInput("Write a draft about... ")} />
-          <QuickAction icon={<Search size={16} />} label="Research a topic" onClick={() => setInput("Research the topic of... ")} />
-          <QuickAction icon={<ImageIcon size={16} />} label="Generate images" onClick={() => setInput("Generate an image of... ")} />
-          <QuickAction icon={<Globe size={16} />} label="Browse & summarize" onClick={() => setInput("Summarize the website at https://...")} />
-          <QuickAction icon={<Mail size={16} />} label="Draft an email" onClick={() => setInput("Draft an email to... ")} />
+        <div className="action-tiles">
+          <button type="button" className="action-tile" onClick={() => setInput("Write a draft about... ")}>
+            <span className="icon"><PenTool size={16} /></span> Write something
+          </button>
+          <button type="button" className="action-tile" onClick={() => setInput("Research the topic of... ")}>
+            <span className="icon"><Search size={16} /></span> Research a topic
+          </button>
+          <button type="button" className="action-tile" onClick={() => setInput("Generate an image of... ")}>
+            <span className="icon"><ImageIcon size={16} /></span> Generate images
+          </button>
+          <button type="button" className="action-tile" onClick={() => setInput("Summarize the website at https://...")}>
+            <span className="icon"><Globe size={16} /></span> Browse &amp; summarize
+          </button>
+          <button type="button" className="action-tile" onClick={() => setInput("Draft an email to... ")}>
+            <span className="icon"><Mail size={16} /></span> Draft an email
+          </button>
+          <button type="button" className="action-tile" onClick={() => setInput("Ingest this into the brain: ")}>
+            <span className="icon"><FileText size={16} /></span> Ingest content
+          </button>
+          <button type="button" className="action-tile" onClick={() => setInput("Brainstorm 5 ideas for: ")}>
+            <span className="icon"><Sparkles size={16} /></span> Brainstorm
+          </button>
         </div>
 
         {recentThreads.length > 0 && (
-          <div style={{ marginTop: '48px' }}>
-            <h3 style={{ fontSize: '1rem', color: 'var(--text-secondary)', marginBottom: '16px', paddingLeft: '8px' }}>Recent threads</h3>
-            <div className="home-recent-threads" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '16px' }}>
-              {recentThreads.map(thread => (
+          <div className="home-recent-list">
+            <div className="sidebar-section-label home-recent-section-label">Recent threads</div>
+            <div className="home-recent-grid">
+              {recentThreads.slice(0, 6).map(thread => (
                 <button
                   type="button"
                   key={thread.id}
                   onClick={() => onSelectThread(thread.id)}
-                  className="glass-panel thread-card thread-card"
+                  className="home-recent-card"
                 >
-                  <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                    <div className="thread-card-icon">
-                      <ImageIcon size={20} color="var(--text-tertiary)" />
-                    </div>
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <h4 style={{ fontSize: '0.875rem', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{thread.title}</h4>
-                      <p style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', margin: 0 }}>{thread.updatedAt}</p>
-                    </div>
+                  <div className="status-dot status-dot--off" style={{ background: 'var(--accent-primary)', opacity: 0.6, boxShadow: 'none' }} />
+                  <div className="home-recent-card__body">
+                    <h4 className="home-recent-card__title">{thread.title}</h4>
+                    <p className="home-recent-card__meta">{thread.updatedAt}</p>
                   </div>
                 </button>
               ))}
@@ -136,17 +163,31 @@ const HomeView: React.FC<HomeViewProps> = ({ onStartThread, recentThreads, onSel
           </div>
         )}
       </div>
+
+      <div className="status-bar home-status-bar">
+        <div className="status-bar__group">
+          <span className="status-dot status-dot--live" />
+          <span>v0.40.7.0</span>
+        </div>
+        <span className="status-bar__sep">|</span>
+        <div className="status-bar__group">
+          <span>brain</span><span className="status-bar__value">146,646pg</span>
+        </div>
+        <span className="status-bar__sep">|</span>
+        <div className="status-bar__group">
+          <span>skills</span><span className="status-bar__value">42</span>
+        </div>
+        <span className="status-bar__sep">|</span>
+        <div className="status-bar__group">
+          <span>cf</span><span className="status-bar__value" style={{ color: '#10B981' }}>connected</span>
+        </div>
+        <div style={{ flex: 1 }} />
+        <div className="status-bar__group">
+          <span>esc to close</span>
+        </div>
+      </div>
     </div>
   );
 };
-
-const QuickAction = ({ icon, label, onClick }: { icon: React.ReactNode, label: string, onClick: () => void }) => (
-  <button type="button"
-    onClick={onClick}
-    className="quick-action quick-action"
-  >
-    {icon} {label}
-  </button>
-);
 
 export default HomeView;

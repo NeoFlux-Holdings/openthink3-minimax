@@ -105,11 +105,12 @@ const Sidebar: React.FC<SidebarProps> = ({
             </div>
           )}
 
-          <button type="button" className="btn btn-primary" onClick={onNewTask} style={{ width: '100%', marginBottom: '24px', justifyContent: 'flex-start', minHeight: 44 }}>
-            <Plus size={18} /> <span className="sidebar-label">New Task</span>
+          <button type="button" className="sidebar-new-task" onClick={onNewTask}>
+            <Plus size={16} /> <span className="sidebar-label">New Task</span>
           </button>
-          
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '24px' }}>
+
+          <div className="sidebar-section-label">Workspace</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
             <SidebarItem icon={<Search size={18} />} label="Search" isActive={false} onClick={() => onSelectCanvasTab?.('library')} />
             <SidebarItem icon={<Library size={18} />} label="Library" isActive={activeCanvasTab === 'library'} onClick={() => onSelectCanvasTab?.('library')} />
             <SidebarItem icon={<Brain size={18} />} label="Learning" badge="3" isActive={activeCanvasTab === 'learning'} onClick={() => onSelectCanvasTab?.('learning')} />
@@ -117,10 +118,9 @@ const Sidebar: React.FC<SidebarProps> = ({
             <SidebarItem icon={<Monitor size={18} />} label="Desktop Remote" isActive={activeCanvasTab === 'desktop'} onClick={() => onSelectCanvasTab?.('desktop')} />
           </div>
 
-          <div style={{ height: '1px', background: 'var(--border-subtle)', margin: '0 8px 16px' }} />
+          <div className="sidebar-divider" />
 
-          {/* Pinned Summaries Collapsible & Pop-out Section */}
-          <div style={{ marginBottom: '24px' }}>
+          <div style={{ marginBottom: '16px' }}>
             <div className="section-label--sticky">
               <button
                 type="button"
@@ -147,7 +147,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             </div>
 
             {isSummariesExpanded && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', paddingLeft: '4px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '4px' }}>
                 {isSummariesPoppedOut ? (
                   <div style={{ padding: '8px', fontSize: '0.75rem', color: 'var(--text-tertiary)', textAlign: 'center', background: 'rgba(255,255,255,0.02)', borderRadius: '4px' }}>
                     Popped out to window
@@ -175,17 +175,17 @@ const Sidebar: React.FC<SidebarProps> = ({
             )}
           </div>
 
-          <div style={{ height: '1px', background: 'var(--border-subtle)', margin: '0 8px 16px' }} />
+          <div className="sidebar-divider" />
 
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-tertiary)', letterSpacing: '0.05em', marginBottom: '8px', paddingLeft: '8px', fontWeight: 600 }}>Recent Threads</div>
+            <div className="sidebar-section-label">Recent Threads</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
               {recentThreads.map(thread => (
-                <SidebarItem 
+                <SidebarItem
                   key={thread.id}
-                  icon={<MessageSquare size={14} />} 
-                  label={thread.title} 
-                  isSub={true} 
+                  icon={<MessageSquare size={14} />}
+                  label={thread.title}
+                  isSub={true}
                   isActive={thread.id === activeThreadId}
                   onClick={() => onSelectThread(thread.id)}
                 />
@@ -193,12 +193,25 @@ const Sidebar: React.FC<SidebarProps> = ({
             </div>
           </div>
 
-          <div style={{ height: '1px', background: 'var(--border-subtle)', margin: '16px 8px' }} />
+          <div className="sidebar-divider" />
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <div className="sidebar-section-label">System</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
             <SidebarItem icon={<User size={18} />} label="Account" isActive={activeCanvasTab === 'account'} onClick={() => onSelectCanvasTab?.('account')} />
             <SidebarItem icon={<Settings size={18} />} label="Settings" isActive={activeCanvasTab === 'settings'} onClick={() => onSelectCanvasTab?.('settings')} />
             <SidebarItem icon={<HelpCircle size={18} />} label="Help" isActive={false} onClick={() => onSelectCanvasTab?.('learning')} />
+          </div>
+
+          <div className="status-bar" style={{ margin: 'auto 0 0', borderTop: '1px solid var(--border-subtle)' }}>
+            <div className="status-bar__group">
+              <span className="status-dot status-dot--live" />
+              <span>v0.40.7.0</span>
+            </div>
+            <div style={{ flex: 1 }} />
+            <div className="status-bar__group">
+              <span className="status-dot status-dot--busy" />
+              <span>brain</span>
+            </div>
           </div>
         </div>
       )}
@@ -209,17 +222,17 @@ const Sidebar: React.FC<SidebarProps> = ({
 const SidebarItem = ({ icon, label, badge, isSub = false, isActive = false, onClick }: { icon: React.ReactNode, label: string, badge?: string, isSub?: boolean, isActive?: boolean, onClick?: () => void }) => (
   <button type="button"
     onClick={onClick}
-    className="sidebar-item"
+    className={`sidebar-item ${isSub ? 'sidebar-item--sub' : ''}`}
     data-active={isActive ? 'true' : undefined}
   >
     <div className="row-flex-gap-12">
       <span style={{ color: isActive ? 'var(--accent-primary)' : isSub ? 'var(--text-tertiary)' : 'inherit', display: 'flex', alignItems: 'center', flexShrink: 0 }}>{icon}</span>
-      <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%' }}>{label}</span>
+      <span className="label-truncate">{label}</span>
     </div>
     {badge && (
-      <span style={{
-        background: 'var(--accent-primary)', color: 'white', fontSize: '0.75rem',
-        fontWeight: 'bold', padding: '2px 6px', borderRadius: 'var(--radius-full)'
+      <span className="mono" style={{
+        background: 'var(--accent-primary)', color: '#000', fontSize: '0.7rem',
+        fontWeight: 700, padding: '1px 5px', letterSpacing: '0.05em'
       }}>{badge}</span>
     )}
   </button>
