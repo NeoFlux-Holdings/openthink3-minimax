@@ -1,7 +1,0 @@
-{
-  "path": "worker-bundle.js",
-  "bytes": 2090774,
-  "sha256": "51e04b8f96da8afa7c90ea14caab0fd2c1255a2ed90c5884edfe972318db304b",
-  "builtAt": "2026-06-03T20:26:29.585Z",
-  "workerDir": "worker"
-}
