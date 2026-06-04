@@ -26,6 +26,13 @@ import {
   handleEvals,
   handleDream,
 } from "./skills.js";
+import {
+  handleAuthLogin,
+  handleAuthCallback,
+  handleAuthStatus,
+  handleAuthLogout,
+  requireApiAuth,
+} from "./auth.js";
 
 export interface Env {
   AI: any;
@@ -43,6 +50,14 @@ export interface Env {
   CF_ACCOUNT_ID?: string;
   GH_TOKEN?: string;
   GH_REPO?: string;
+  // OAuth / session
+  OAUTH_CLIENT_ID?: string;
+  SESSION_SECRET?: string;
+  OAUTH_AUTHORIZE_URL?: string;
+  OAUTH_TOKEN_URL?: string;
+  OAUTH_USERINFO_URL?: string;
+  OAUTH_REVOKE_URL?: string;
+  WORKER_DEFAULT_HOST?: string;
 }
 
 // OrchestratorDO acts as the MCP Server (Agent B)
@@ -456,6 +471,27 @@ export default {
     // CORS Preflight
     if (request.method === "OPTIONS") {
       return new Response(null, { headers: corsHeaders() });
+    }
+
+    // ── OAuth (worker-side) — gates the deployed agent on custom domains ──
+    if (url.pathname === "/auth/login" && request.method === "GET") {
+      return handleAuthLogin(request, env);
+    }
+    if (url.pathname === "/auth/callback" && request.method === "GET") {
+      return handleAuthCallback(request, env);
+    }
+    if (url.pathname === "/auth/logout" && (request.method === "POST" || request.method === "GET")) {
+      return handleAuthLogout(request, env);
+    }
+    if (url.pathname === "/api/auth/status" && request.method === "GET") {
+      // Always allow status to be probed; returns 401 if no session.
+      return handleAuthStatus(request, env);
+    }
+
+    // ── Auth gate: block /api/* when host is a custom domain ──────────────
+    if (url.pathname.startsWith("/api/")) {
+      const denied = await requireApiAuth(request, env);
+      if (denied) return denied;
     }
 
     // ── Brain API (/api/brain/*) ────────────────────────────────

@@ -1,5 +1,7 @@
-import { useEffect, useReducer, type Dispatch, type SetStateAction } from 'react';
+import { useEffect, useReducer, useState, type Dispatch, type SetStateAction } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useParams } from 'react-router-dom';
+import OAuthCallback from './components/OAuthCallback';
+import { Cloud, ShieldCheck, Loader2 } from 'lucide-react';
 import { Pin } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import HomeView from './components/HomeView';
@@ -120,6 +122,97 @@ const appViewReducer = (state: AppViewState, action: AppViewAction): AppViewStat
           typeof action.value === 'function' ? action.value(state.recentThreads) : action.value,
       };
   }
+};
+
+const LoginGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const apiBase = typeof window !== 'undefined'
+    ? (localStorage.getItem('openthink_api_url') || window.location.origin)
+    : '';
+  const [state, setState] = useState<'checking' | 'unauthenticated' | 'authenticated' | 'disabled'>('checking');
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(`${apiBase}/api/auth/status`, { credentials: 'include' });
+        if (cancelled) return;
+        if (r.status === 404 || r.status === 405) {
+          setState('disabled');
+          return;
+        }
+        if (r.ok) {
+          const j = await r.json();
+          setState(j.authenticated ? 'authenticated' : 'unauthenticated');
+        } else {
+          setState('unauthenticated');
+        }
+      } catch {
+        if (!cancelled) setState('unauthenticated');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [apiBase]);
+
+  useEffect(() => {
+    if (state !== 'unauthenticated') return;
+    const onFocus = () => {
+      fetch(`${apiBase}/api/auth/status`, { credentials: 'include' })
+        .then(r => r.ok ? r.json() : null)
+        .then(j => { if (j?.authenticated) setState('authenticated'); })
+        .catch(() => null);
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [state, apiBase]);
+
+  if (state === 'checking') {
+    return (
+      <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-primary)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: 'var(--text-secondary)' }}>
+          <Loader2 size={18} className="spin" /> Loading…
+          <style>{`.spin { animation: spin 1s linear infinite; } @keyframes spin { 100% { transform: rotate(360deg); } }`}</style>
+        </div>
+      </div>
+    );
+  }
+  if (state === 'authenticated' || state === 'disabled') {
+    return <>{children}</>;
+  }
+
+  const next = typeof window !== 'undefined' ? window.location.pathname + window.location.search : '/app';
+
+  return (
+    <div style={{
+      minHeight: '100dvh',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '24px',
+      background: 'var(--bg-primary)',
+    }}>
+      <div className="glass-card" style={{ maxWidth: '440px', width: '100%', padding: '32px', textAlign: 'center' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
+          <Cloud size={36} color="var(--accent-secondary)" />
+        </div>
+        <h2 style={{ fontSize: '1.5rem', margin: '0 0 8px', color: 'var(--text-primary)' }}>
+          Sign in to continue
+        </h2>
+        <p style={{ color: 'var(--text-secondary)', margin: '0 0 24px', fontSize: '0.9rem' }}>
+          This agent is private. Sign in with your Cloudflare account to access it.
+        </p>
+        <a
+          href={`${apiBase}/auth/login?next=${encodeURIComponent(next)}`}
+          className="btn btn-primary"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '14px 24px', fontSize: '1rem', textDecoration: 'none' }}
+        >
+          <ShieldCheck size={18} /> Sign in with Cloudflare
+        </a>
+        <p style={{ marginTop: '20px', fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
+          You'll be redirected to dash.cloudflare.com to grant access.
+        </p>
+      </div>
+    </div>
+  );
 };
 
 const AppView = () => {
@@ -258,7 +351,7 @@ const AppView = () => {
   };
 
   return (
-    <>
+    <LoginGate>
       <div className={rootClass}>
         {!isMobile && (
           <Sidebar {...sidebarProps} />
@@ -343,7 +436,7 @@ const AppView = () => {
           <AccountHub isStandalone />
         </div>
       )}
-    </>
+    </LoginGate>
   );
 };
 
@@ -379,6 +472,7 @@ function App() {
         <Route path="/" element={<MarketingView />} />
         <Route path="/deploy" element={<DeployFlow />} />
         <Route path="/app" element={<AppView />} />
+        <Route path="/oauth/callback" element={<OAuthCallback />} />
         <Route path="/app-account" element={<AccountHub isStandalone={true} />} />
         <Route path="/popout/:tab" element={<PopoutContainer />} />
         <Route path="*" element={<Navigate to="/" replace />} />

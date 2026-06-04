@@ -51,7 +51,15 @@ crons = ["0 5 * * *", "0 6 * * *"]
 # Non-secret environment variables. Set with:
 #   npx wrangler secret put CF_API_TOKEN
 #   npx wrangler secret put GH_TOKEN
+#   npx wrangler secret put SESSION_SECRET
+#   npx wrangler secret put OAUTH_CLIENT_ID
 # and via `npx wrangler deploy` env={...} for the vars below.
 [vars]
 CF_ACCOUNT_ID = ""
 GH_REPO = "NeoFlux-Holdings/openthink3-minimax"
+OAUTH_AUTHORIZE_URL = "https://dash.cloudflare.com/oauth2/auth"
+OAUTH_TOKEN_URL = "https://dash.cloudflare.com/oauth2/token"
+OAUTH_USERINFO_URL = "https://dash.cloudflare.com/oauth2/userinfo"
+OAUTH_REVOKE_URL = "https://dash.cloudflare.com/oauth2/revoke"
+# Default worker host (used to detect custom-domain requests that should require auth).
+WORKER_DEFAULT_HOST = "openthink3-worker.thomas-zarebczan.workers.dev"

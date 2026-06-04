@@ -20,6 +20,22 @@ function getWranglerToken() {
   }
 }
 
+function getBearerFromRequest(req: any): string | null {
+  const h = req.headers?.authorization || req.headers?.Authorization;
+  if (typeof h === 'string' && h.toLowerCase().startsWith('bearer ')) {
+    return h.slice(7).trim();
+  }
+  return null;
+}
+
+function resolveCfToken(req: any): { token: string; source: 'oauth' | 'wrangler' } | null {
+  const bearer = getBearerFromRequest(req);
+  if (bearer) return { token: bearer, source: 'oauth' };
+  const w = getWranglerToken();
+  if (w) return { token: w, source: 'wrangler' };
+  return null;
+}
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
@@ -30,10 +46,10 @@ export default defineConfig({
         server.middlewares.use(async (req, res, next) => {
           if (req.url === '/api/cloudflare-zones') {
             try {
-              const token = getWranglerToken();
-              if (!token) {
+              const auth = resolveCfToken(req);
+              if (!auth) {
                 res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ error: 'No wrangler token found' }));
+                res.end(JSON.stringify({ error: 'No Cloudflare credentials. Sign in with Cloudflare or run `wrangler login`.' }));
                 return;
               }
               let page = 1;
@@ -41,7 +57,7 @@ export default defineConfig({
               while (true) {
                 const response = await fetch(`https://api.cloudflare.com/client/v4/zones?page=${page}&per_page=50`, {
                   headers: {
-                    'Authorization': `Bearer ${token}`
+                    'Authorization': `Bearer ${auth.token}`
                   }
                 });
                 const data = await response.json() as any;
@@ -58,7 +74,7 @@ export default defineConfig({
               }
               const domains = allZones.map((z: any) => z.name);
               res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ domains }));
+              res.end(JSON.stringify({ domains, source: auth.source }));
             } catch (err: any) {
               res.writeHead(200, { 'Content-Type': 'application/json' });
               res.end(JSON.stringify({ error: err.message }));
@@ -72,8 +88,8 @@ export default defineConfig({
               res.end(JSON.stringify(body));
             };
             try {
-              const token = getWranglerToken();
-              if (!token) return sendJson(503, { error: 'No wrangler token found. Run `wrangler login`.' });
+              const auth = resolveCfToken(req);
+              if (!auth) return sendJson(503, { error: 'No Cloudflare credentials. Sign in with Cloudflare or run `wrangler login`.' });
               let body: any = {};
               try {
                 const chunks: Buffer[] = [];
@@ -90,7 +106,7 @@ export default defineConfig({
               let page = 1;
               while (true) {
                 const r = await fetch(`https://api.cloudflare.com/client/v4/zones?page=${page}&per_page=50`, {
-                  headers: { Authorization: `Bearer ${token}` },
+                  headers: { Authorization: `Bearer ${auth.token}` },
                 });
                 const d = await r.json() as any;
                 if (!d.success) return sendJson(502, { error: JSON.stringify(d.errors) });
@@ -106,7 +122,7 @@ export default defineConfig({
               const pattern = `${target}/*`;
               const routeRes = await fetch(`https://api.cloudflare.com/client/v4/zones/${zone.id}/workers/routes`, {
                 method: 'POST',
-                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({ pattern, script: 'openthink3-worker' }),
               });
               const routeData = await routeRes.json() as any;

@@ -1,3 +1,5 @@
+import { getValidAccessToken, getSession } from './cfOAuth';
+
 export type CfCreds = { token: string; accountId: string; accountName?: string; email?: string };
 const STORAGE_KEY = 'openthink_cf_creds_v1';
 
@@ -17,12 +19,29 @@ export function clearCfCreds(): void {
 }
 
 export function cfAuthHeaders(): Record<string, string> {
+  if (typeof window === 'undefined') return {};
+  const oauth = getSession();
+  if (oauth?.accessToken) {
+    return { Authorization: `Bearer ${oauth.accessToken}` };
+  }
   const c = getCfCreds();
   if (!c) return {};
   return {
     'X-CF-Token': c.token,
     'X-CF-Account-Id': c.accountId,
   };
+}
+
+export function isCfSignedIn(): boolean {
+  return !!(getSession() || getCfCreds());
+}
+
+export function activeCfEmail(): string | undefined {
+  return getSession()?.email ?? getCfCreds()?.email;
+}
+
+export function activeCfAccountId(): string | undefined {
+  return getSession()?.accountId ?? getCfCreds()?.accountId;
 }
 
 export async function resolveAccount(token: string): Promise<CfCreds> {
@@ -36,3 +55,6 @@ export async function resolveAccount(token: string): Promise<CfCreds> {
   if (!r.ok || !data.ok) throw new Error(data.error || `HTTP ${r.status}`);
   return { token, accountId: data.accountId, accountName: data.accountName, email: data.email };
 }
+
+// Re-export for callers that want async token refresh.
+export { getValidAccessToken as getCfBearerToken };
