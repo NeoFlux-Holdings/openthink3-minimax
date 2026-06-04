@@ -30,9 +30,13 @@ const DeployFlow = () => {
     showAdvanced, setShowAdvanced,
     bypassAccess, setBypassAccess,
     isDeploying,
-    progressLog,
+    deploySteps,
+    rawLog,
+    showRawLog,
+    setShowRawLog,
+    agentUrl,
+    startDeploy,
     maxStepReached,
-    handleDeploy,
   } = useDeployFlow();
 
   if (!creds) {
@@ -149,12 +153,19 @@ const DeployFlow = () => {
               agentName={agentName}
               domain={domain}
               onBack={() => setStep(3)}
-              onDeploy={handleDeploy}
+              onDeploy={startDeploy}
             />
           )}
 
           {isDeploying && (
-            <DeployProgress agentName={agentName} progressLog={progressLog} />
+            <DeployProgress
+              agentName={agentName}
+              steps={deploySteps}
+              rawLog={rawLog}
+              showRawLog={showRawLog}
+              setShowRawLog={setShowRawLog}
+              agentUrl={agentUrl}
+            />
           )}
 
         </div>

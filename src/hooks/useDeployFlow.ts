@@ -1,5 +1,5 @@
 import { useState, useEffect, useEffectEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+// navigate() is now triggered by user clicking "Open your agent" CTA, not auto.
 
 const DEFAULT_DOMAINS = [
   "circlejerk.app",
@@ -25,6 +25,24 @@ const STORAGE_KEYS = {
   "customInput": "openthink_deploy_custom_input",
   "customDomain": "openthink_custom_domain"
 } as const;
+
+export type DeployStepStatus = 'pending' | 'running' | 'done' | 'error';
+export type DeployStepId = 'prepare' | 'worker' | 'site' | 'attach' | 'open';
+
+export type DeployStep = {
+  id: DeployStepId;
+  label: string;
+  status: DeployStepStatus;
+  detail?: string;
+};
+
+const DEFAULT_STEPS: DeployStep[] = [
+  { id: 'prepare', label: 'Preparing your agent', status: 'pending' },
+  { id: 'worker', label: 'Publishing to Cloudflare', status: 'pending' },
+  { id: 'site', label: 'Building the web app', status: 'pending' },
+  { id: 'attach', label: 'Attaching your domain', status: 'pending' },
+  { id: 'open', label: 'Ready to open', status: 'pending' },
+];
 
 export const useDeployFlow = () => {
   const [step, setStepRaw] = useState(() => {
@@ -57,9 +75,10 @@ export const useDeployFlow = () => {
   });
   const [bypassAccess, setBypassAccess] = useState(false);
   const [isDeploying, setIsDeploying] = useState(false);
-  const [progressLog, setProgressLog] = useState<string[]>([]);
-
-  const navigate = useNavigate();
+  const [deploySteps, setDeploySteps] = useState<DeployStep[]>(DEFAULT_STEPS);
+  const [rawLog, setRawLog] = useState<string[]>([]);
+  const [showRawLog, setShowRawLog] = useState(false);
+  const [agentUrl, setAgentUrl] = useState<string | null>(null);
 
   const setStep = (next: number | ((prev: number) => number)) => {
     setStepRaw(prev => {
@@ -77,6 +96,10 @@ export const useDeployFlow = () => {
   const setSubdomain = (v: string) => { setSubdomainRaw(v); localStorage.setItem(STORAGE_KEYS.subdomain, v); };
   const setUseCustomDomain = (v: boolean) => { setUseCustomDomainRaw(v); localStorage.setItem(STORAGE_KEYS.useCustom, v.toString()); };
   const setCustomDomainInput = (v: string) => { setCustomDomainInputRaw(v); localStorage.setItem(STORAGE_KEYS.customInput, v); };
+
+  const updateStep = (id: DeployStepId, patch: Partial<DeployStep>) => {
+    setDeploySteps(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s));
+  };
 
   const loadDomains = useEffectEvent(async () => {
     setLoadingDomains(true);
@@ -126,61 +149,160 @@ export const useDeployFlow = () => {
     void loadDomains();
   }, []);
 
-  const handleDeploy = () => {
+  // Attach the custom domain via the dev orchestrator's /api/cloudflare-attach-domain
+  // endpoint. Returns the resolved agent URL on success.
+  const attachDomain = useEffectEvent(async (target: string): Promise<string | null> => {
+    updateStep('attach', { status: 'running', detail: `Connecting ${target}…` });
+    try {
+      const res = await fetch('/api/cloudflare-attach-domain', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domain: target }),
+      });
+      if (!res.ok) {
+        const err = await res.text();
+        updateStep('attach', { status: 'error', detail: `Could not attach: ${err}` });
+        return null;
+      }
+      const data = await res.json();
+      if (data.url) {
+        updateStep('attach', { status: 'done', detail: `Route attached for ${target}` });
+        return data.url;
+      }
+      updateStep('attach', { status: 'done', detail: 'Domain attached' });
+      return `https://${target}`;
+    } catch (err) {
+      updateStep('attach', { status: 'error', detail: err instanceof Error ? err.message : String(err) });
+      return null;
+    }
+  });
+
+  const startDeploy = useEffectEvent(async () => {
     setIsDeploying(true);
-    setProgressLog(['Starting infrastructure deployment orchestrator...']);
+    setDeploySteps(DEFAULT_STEPS);
+    setRawLog([]);
+    setAgentUrl(null);
+
+    updateStep('prepare', { status: 'running' });
+
     const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const finalDomain = (useCustomDomain ? customDomainInput : `${subdomain}.${selectedBaseDomain}`) || domain;
+
     if (!isLocalDev) {
-      setProgressLog(p => [...p, 'Production environment detected. Running cloudflare simulated link...']);
-      setTimeout(() => {
-        setProgressLog(p => [...p, 'Deployment successful! Linked live edge configurations...']);
-        localStorage.setItem('openthink_api_url', 'https://openthink3-worker.thomas-zarebczan.workers.dev');
-        if (domain) {
-          localStorage.setItem(STORAGE_KEYS.customDomain, domain);
-        }
-        setTimeout(() => navigate('/app'), 1500);
-      }, 3000);
+      // Production environment: no real orchestrator. Simulate progress so
+      // the user sees the same checklist shape, then mark all done.
+      updateStep('prepare', { status: 'done', detail: 'Linked to live edge' });
+      updateStep('worker', { status: 'running' });
+      await new Promise(r => setTimeout(r, 600));
+      updateStep('worker', { status: 'done', detail: 'openthink3-worker published' });
+      updateStep('site', { status: 'running' });
+      await new Promise(r => setTimeout(r, 600));
+      updateStep('site', { status: 'done', detail: 'openthink-harness published' });
+      const url = await attachDomain(finalDomain);
+      updateStep('open', { status: 'done', detail: url ?? `https://${finalDomain}` });
+      if (url) setAgentUrl(url);
+      localStorage.setItem('openthink_api_url', 'https://openthink3-worker.thomas-zarebczan.workers.dev');
+      localStorage.setItem(STORAGE_KEYS.customDomain, finalDomain);
+      setIsDeploying(false);
       return;
     }
+
+    // Local dev: connect to the vite orchestrator SSE stream.
     const eventSource = new EventSource('/api/deploy');
-    eventSource.onmessage = (event) => {
+    updateStep('prepare', { status: 'done' });
+    updateStep('worker', { status: 'running' });
+
+    const handleLog = (raw: string) => {
+      // Always capture the raw log so the user can expand details if needed.
+      setRawLog(prev => [...prev, raw]);
+
+      // Parse out step transitions only. Everything else is noise.
+      if (raw.includes('Step 1:')) {
+        updateStep('worker', { status: 'running' });
+      } else if (raw.includes('Step 2:')) {
+        updateStep('worker', { status: 'done', detail: 'Worker live' });
+        updateStep('site', { status: 'running' });
+      } else if (raw.includes('Step 3:')) {
+        updateStep('site', { status: 'done', detail: 'Web app published' });
+        updateStep('attach', { status: 'running', detail: 'Connecting your domain…' });
+      } else if (raw.includes('Syncing custom domain binding')) {
+        updateStep('attach', { status: 'running', detail: 'Routing DNS…' });
+      }
+    };
+
+    eventSource.onmessage = async (event) => {
       try {
         const data = JSON.parse(event.data);
         if (data.log) {
           const cleanLog = data.log.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '');
-          const isSpam = cleanLog.includes('npm warn') ||
-                         cleanLog.includes('Unknown env config') ||
-                         cleanLog.includes('msbuild-path') ||
-                         cleanLog.includes('msvs_version') ||
-                         cleanLog.includes('msvs-version') ||
-                         cleanLog.includes('vcinstalldir') ||
-                         cleanLog.includes('VCTargetsPath') ||
-                         cleanLog.includes('VCVARS');
+          const isSpam =
+            cleanLog.includes('npm warn') ||
+            cleanLog.includes('Unknown env config') ||
+            cleanLog.includes('msbuild-path') ||
+            cleanLog.includes('msvs_version') ||
+            cleanLog.includes('msvs-version') ||
+            cleanLog.includes('vcinstalldir') ||
+            cleanLog.includes('VCTargetsPath') ||
+            cleanLog.includes('VCVARS') ||
+            cleanLog.includes('wrangler 4.') ||
+            cleanLog.includes('Cloudflare agent skills') ||
+            cleanLog.includes('(update available') ||
+            cleanLog.includes('Current Version ID:') ||
+            cleanLog.includes('schedule:') ||
+            cleanLog.includes('Total Upload:') ||
+            cleanLog.includes('Worker Startup Time:') ||
+            cleanLog.includes('Your Worker has access') ||
+            cleanLog.startsWith('env.') ||
+            cleanLog.startsWith('Binding ') ||
+            cleanLog.startsWith('Uploaded ') ||
+            cleanLog.startsWith('Deployed ') ||
+            cleanLog.startsWith('---dry-run:') ||
+            cleanLog.startsWith('[Stderr]') ||
+            cleanLog.startsWith('Running:') ||
+            cleanLog.startsWith('Successfully fetched') ||
+            cleanLog.startsWith('[bundle-worker]') ||
+            cleanLog.startsWith('vite v') ||
+            cleanLog.startsWith('transforming') ||
+            cleanLog.startsWith('✓') ||
+            cleanLog.startsWith('rendering chunks') ||
+            cleanLog.startsWith('computing gzip') ||
+            cleanLog.startsWith('dist/') ||
+            cleanLog.startsWith('build in');
           if (cleanLog.trim() && !isSpam) {
-            setProgressLog(p => [...p, cleanLog]);
+            handleLog(cleanLog);
+          } else {
+            // Still capture for the raw log view, but don't trigger transitions.
+            setRawLog(prev => [...prev, cleanLog]);
           }
         }
         if (data.status === 'success') {
-          setProgressLog(p => [...p, '✨ Infrastructure fully deployed! Syncing custom domain binding...']);
-          localStorage.setItem('openthink_api_url', 'https://openthink3-worker.thomas-zarebczan.workers.dev');
-          if (domain) {
-            localStorage.setItem(STORAGE_KEYS.customDomain, domain);
-          }
+          updateStep('worker', { status: 'done', detail: 'Worker live' });
+          updateStep('site', { status: 'done', detail: 'Web app published' });
+          updateStep('attach', { status: 'running', detail: 'Routing your domain…' });
           eventSource.close();
-          setTimeout(() => navigate('/app'), 2000);
+          localStorage.setItem('openthink_api_url', 'https://openthink3-worker.thomas-zarebczan.workers.dev');
+          localStorage.setItem(STORAGE_KEYS.customDomain, finalDomain);
+          const url = await attachDomain(finalDomain);
+          updateStep('open', { status: 'done', detail: url ?? `https://${finalDomain}` });
+          if (url) setAgentUrl(url);
+          setIsDeploying(false);
         }
         if (data.status === 'error') {
-          setProgressLog(p => [...p, `❌ Deployment failed: ${data.error}`]);
+          const running = deploySteps.find(s => s.status === 'running');
+          if (running) updateStep(running.id, { status: 'error', detail: data.error });
           eventSource.close();
+          setIsDeploying(false);
         }
-      } catch (err) {
+      } catch {
+        // ignore parse errors
       }
     };
     eventSource.onerror = () => {
-      setProgressLog(p => [...p, '❌ Connection to deployment orchestrator lost.']);
+      updateStep('worker', { status: 'error', detail: 'Connection to orchestrator lost' });
       eventSource.close();
+      setIsDeploying(false);
     };
-  };
+  });
 
   return {
     step, setStep,
@@ -193,9 +315,13 @@ export const useDeployFlow = () => {
     customDomainInput, setCustomDomainInput,
     showAdvanced, setShowAdvanced,
     bypassAccess, setBypassAccess,
-    isDeploying, setIsDeploying,
-    progressLog, setProgressLog,
+    isDeploying,
+    deploySteps,
+    rawLog,
+    showRawLog,
+    setShowRawLog,
+    agentUrl,
+    startDeploy,
     maxStepReached,
-    handleDeploy,
   };
 };

@@ -66,6 +66,64 @@ export default defineConfig({
             return;
           }
 
+          if (req.url === '/api/cloudflare-attach-domain' && req.method === 'POST') {
+            const sendJson = (status: number, body: any) => {
+              res.writeHead(status, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+              res.end(JSON.stringify(body));
+            };
+            try {
+              const token = getWranglerToken();
+              if (!token) return sendJson(503, { error: 'No wrangler token found. Run `wrangler login`.' });
+              let body: any = {};
+              try {
+                const chunks: Buffer[] = [];
+                for await (const chunk of req) chunks.push(chunk);
+                body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+              } catch {
+                return sendJson(400, { error: 'Invalid JSON body' });
+              }
+              const target = (body.domain || '').trim().toLowerCase();
+              if (!target) return sendJson(400, { error: 'domain is required' });
+
+              // Find the zone that is a suffix of the target.
+              const allZones: any[] = [];
+              let page = 1;
+              while (true) {
+                const r = await fetch(`https://api.cloudflare.com/client/v4/zones?page=${page}&per_page=50`, {
+                  headers: { Authorization: `Bearer ${token}` },
+                });
+                const d = await r.json() as any;
+                if (!d.success) return sendJson(502, { error: JSON.stringify(d.errors) });
+                allZones.push(...d.result);
+                const totalPages = Math.ceil((d.result_info?.total_count || 0) / 50);
+                if (page >= totalPages || d.result.length === 0) break;
+                page++;
+              }
+              const zone = allZones.find(z => target === z.name || target.endsWith('.' + z.name));
+              if (!zone) return sendJson(404, { error: `No Cloudflare zone found for ${target}. Add the domain to Cloudflare first.` });
+
+              // Create or update the worker route.
+              const pattern = `${target}/*`;
+              const routeRes = await fetch(`https://api.cloudflare.com/client/v4/zones/${zone.id}/workers/routes`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ pattern, script: 'openthink3-worker' }),
+              });
+              const routeData = await routeRes.json() as any;
+              if (!routeData.success) {
+                // Idempotent: if the route already exists, that's fine.
+                const msg = JSON.stringify(routeData.errors || {});
+                if (/already exists|duplicate/i.test(msg)) {
+                  return sendJson(200, { url: `https://${target}`, note: 'route already existed' });
+                }
+                return sendJson(502, { error: msg });
+              }
+              return sendJson(200, { url: `https://${target}`, route: routeData.result });
+            } catch (err: any) {
+              return sendJson(500, { error: err.message });
+            }
+          }
+
           if (req.url === '/api/deploy') {
             res.writeHead(200, {
               'Content-Type': 'text/event-stream',

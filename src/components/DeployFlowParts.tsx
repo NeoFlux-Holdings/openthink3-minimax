@@ -392,19 +392,111 @@ export const Step4Review: React.FC<{
 
 export const DeployProgress: React.FC<{
   agentName: string;
-  progressLog: string[];
-}> = ({ agentName, progressLog }) => (
-  <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '24px 0' }}>
-    <Loader2 size={48} color="var(--accent-primary)" className="spin" style={{ marginBottom: '24px' }} />
-    <h2 style={{ fontSize: '1.5rem', marginBottom: '16px' }}>Deploying {agentName}...</h2>
+  steps: Array<{ id: string; label: string; status: 'pending' | 'running' | 'done' | 'error'; detail?: string }>;
+  rawLog: string[];
+  showRawLog: boolean;
+  setShowRawLog: (v: boolean) => void;
+  agentUrl: string | null;
+}> = ({ agentName, steps, rawLog, showRawLog, setShowRawLog, agentUrl }) => {
+  const allDone = steps.every(s => s.status === 'done');
+  const anyError = steps.some(s => s.status === 'error');
+  const targetUrl = agentUrl ?? `https://${steps.find(s => s.id === 'open')?.detail?.replace(/^https?:\/\//, '') ?? ''}`;
 
-    <div className="code-log--elevated">
-      {progressLog.map((log, i) => (
-        <div key={`deploy-${log.slice(0, 20)}`} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: i === progressLog.length - 1 ? 'var(--accent-secondary)' : '#10B981' }} />
-          <span style={{ color: i === progressLog.length - 1 ? 'var(--text-primary)' : 'inherit' }}>{log}</span>
+  return (
+    <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', padding: '8px 0' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
+        {allDone ? (
+          <Check size={28} color="#10B981" />
+        ) : anyError ? (
+          <LogOut size={28} color="#EF4444" />
+        ) : (
+          <Loader2 size={28} color="var(--accent-primary)" className="spin" />
+        )}
+        <h2 style={{ fontSize: '1.4rem', margin: 0 }}>
+          {allDone ? `${agentName} is ready` : anyError ? 'Something went wrong' : `Setting up ${agentName}…`}
+        </h2>
+      </div>
+
+      <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+        {steps.map(step => {
+          const isDone = step.status === 'done';
+          const isRunning = step.status === 'running';
+          const isError = step.status === 'error';
+          return (
+            <li
+              key={step.id}
+              data-status={step.status}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                padding: '10px 12px',
+                borderRadius: 'var(--radius-md)',
+                background: isRunning ? 'var(--bg-tertiary)' : 'transparent',
+                transition: 'background 200ms',
+              }}
+            >
+              <span style={{ width: '20px', display: 'inline-flex', justifyContent: 'center' }}>
+                {isDone ? <Check size={16} color="#10B981" /> :
+                 isError ? <LogOut size={16} color="#EF4444" /> :
+                 isRunning ? <Loader2 size={16} color="var(--accent-primary)" className="spin" /> :
+                 <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--border-strong)' }} />}
+              </span>
+              <span style={{ flex: 1, color: isDone || isRunning ? 'var(--text-primary)' : 'var(--text-tertiary)' }}>
+                {step.label}
+              </span>
+              {step.detail && (
+                <span style={{ fontSize: '0.8rem', color: isError ? '#EF4444' : 'var(--text-tertiary)' }}>
+                  {step.detail}
+                </span>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+
+      {allDone && (
+        <div style={{ marginTop: '24px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <a
+            href={targetUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn btn-primary"
+            style={{ padding: '16px', fontSize: '1.05rem', textAlign: 'center', textDecoration: 'none' }}
+          >
+            Open your agent <ArrowRight size={18} />
+          </a>
+          <span style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)', textAlign: 'center' }}>
+            {targetUrl}
+          </span>
         </div>
-      ))}
+      )}
+
+      {anyError && (
+        <div style={{ marginTop: '24px', padding: '12px 16px', borderRadius: 'var(--radius-md)', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#EF4444', fontSize: '0.9rem' }}>
+          Deployment failed. Check the details below or try again.
+        </div>
+      )}
+
+      <button
+        type="button"
+        className="btn-ghost-sm"
+        onClick={() => setShowRawLog(!showRawLog)}
+        style={{ alignSelf: 'flex-start', marginTop: '16px', fontSize: '0.75rem' }}
+        aria-expanded={showRawLog}
+      >
+        {showRawLog ? 'Hide' : 'Show'} build details ({rawLog.length} lines)
+      </button>
+      {showRawLog && (
+        <div className="code-log--elevated" style={{ marginTop: '8px', maxHeight: '240px', overflow: 'auto' }}>
+          {rawLog.slice(-100).map((log) => (
+            <div key={log} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.75rem' }}>
+              <span style={{ width: '4px', height: '4px', borderRadius: '50%', background: 'var(--border-strong)', flexShrink: 0 }} />
+              <span style={{ color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>{log}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
-  </div>
-);
+  );
+};
