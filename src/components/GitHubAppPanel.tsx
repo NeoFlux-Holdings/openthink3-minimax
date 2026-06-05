@@ -306,7 +306,7 @@ const GitHubAppPanel: React.FC = () => {
   };
 
   const selectedRepo: GhAppRepo | null =
-    status?.repos.find((r) => String(r.id) === selectedRepoId) ?? null;
+    status?.repos?.find((r) => String(r.id) === selectedRepoId) ?? null;
 
   const handleOpenPR = async () => {
     if (!status?.installed) {

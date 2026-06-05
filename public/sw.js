@@ -45,6 +45,21 @@ const isApiRequest = (url) =>
   url.hostname.includes('workers.dev') ||
   url.hostname.includes('exe.dev');
 
+const isCacheableUrl = (url) =>
+  url.protocol === 'http:' || url.protocol === 'https:';
+
+const safePut = (cacheName, req, res) => {
+  try {
+    const url = new URL(req.url);
+    if (!isCacheableUrl(url)) return;
+    if (res.type !== 'basic' && res.type !== 'default') return;
+    const copy = res.clone();
+    caches.open(cacheName).then((c) => c.put(req, copy)).catch(() => {});
+  } catch {
+    // ignore — Cache API rejects non-http(s) schemes, opaque responses, etc.
+  }
+};
+
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
@@ -56,8 +71,7 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(req)
         .then((res) => {
-          const copy = res.clone();
-          caches.open(API_CACHE).then((c) => c.put(req, copy));
+          safePut(API_CACHE, req, res);
           return res;
         })
         .catch(() => caches.match(req).then((r) => r || new Response('Offline', { status: 503 })))
@@ -71,10 +85,7 @@ self.addEventListener('fetch', (event) => {
       if (cached) return cached;
       return fetch(req)
         .then((res) => {
-          if (res.ok && (res.type === 'basic' || res.type === 'default')) {
-            const copy = res.clone();
-            caches.open(SHELL_CACHE).then((c) => c.put(req, copy));
-          }
+          if (res.ok) safePut(SHELL_CACHE, req, res);
           return res;
         })
         .catch(() => {

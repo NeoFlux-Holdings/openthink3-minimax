@@ -1,11 +1,3 @@
-# Creates the OpenThink3 Cloudflare OAuth client (public, PKCE).
-# Account id is hard-coded for thomas.zarebczan@gmail.com.
-#
-# Requires an API token with `OAuth Clients: Write` permission.
-# After creation the script prints the client_id — paste it into
-# src/lib/cfOAuth.ts:CF_OAUTH_CONFIG.clientId and into
-# `wrangler secret put OAUTH_CLIENT_ID`.
-
 $CF_TOKEN = $env:CF_OAUTH_SETUP_TOKEN
 if (-not $CF_TOKEN) {
   Write-Host "Set CF_OAUTH_SETUP_TOKEN in the env (an API token with `OAuth Clients: Write` permission) and re-run." -ForegroundColor Yellow
@@ -27,15 +19,57 @@ $body = @{
     "https://open-think.app/oauth/callback",
     "https://open-think.app/auth/callback"
   )
+  # ── Union of all scope tiers (basic + domain + platform).
+  # Source of truth: src/lib/cfOAuth.ts:CF_OAUTH_CONFIG.scopes
   scopes = @(
+    # Tier 1 — basic (account discovery + worker/Pages/KV/D1 deploy)
     "account-settings.read",
+    "account-settings.write",
     "user-details.read",
+    "memberships.read",
+    "workers-scripts.read",
     "workers-scripts.write",
+    "workers-routes.read",
     "workers-routes.write",
+    "workers-kv-storage.read",
     "workers-kv-storage.write",
+    "page.read",
     "page.write",
     "d1.write",
+    "d1.metadata_read",
     "zone.read",
+    # Tier 2 — custom-domain subdomain deploy + SSL automation
+    "zone.write",
+    "zone-settings.read",
+    "zone-settings.write",
+    "ssl-and-certificates.read",
+    "ssl-and-certificates.write",
+    # Tier 3 — full platform surface
+    "vectorize.read",
+    "vectorize.write",
+    "workers-r2.read",
+    "workers-r2.write",
+    "workers-r2-bucket-item.read",
+    "workers-r2-bucket-item.write",
+    "queues.read",
+    "queues.write",
+    "pipelines.read",
+    "pipelines.write",
+    "pipelines.send",
+    "ai.read",
+    "ai.write",
+    "workers-observability.read",
+    "workers-tail.read",
+    "workers-ci.read",
+    "teams.read",
+    "teams.write",
+    "secrets-store.read",
+    "secrets-store.write",
+    "containers.read",
+    "containers.write",
+    "account-logs.read",
+    "logs.read",
+    # Offline access (refresh tokens)
     "offline_access"
   )
   response_types = @("code")

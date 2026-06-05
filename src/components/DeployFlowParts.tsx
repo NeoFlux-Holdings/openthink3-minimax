@@ -235,7 +235,7 @@ export const Step0CloudflareConnect: React.FC<{
   const handleOAuthSignIn = async () => {
     setError(null);
     try {
-      await beginAuthorize('/deploy');
+      await beginAuthorize('/deploy', 'domain');
     } catch (e: any) {
       setError(e.message || String(e));
     }

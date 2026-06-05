@@ -211,7 +211,7 @@ export default function CloudflareSyncPanel({ apiBase }: CloudflareSyncPanelProp
     setConnectError(null);
     try {
       const { beginAuthorize } = await import('../lib/cfOAuth');
-      await beginAuthorize(window.location.pathname);
+      await beginAuthorize(window.location.pathname, 'platform');
     } catch (e: any) {
       setConnectError(e.message || String(e));
     }

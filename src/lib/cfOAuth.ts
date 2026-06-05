@@ -17,21 +17,129 @@ export const CF_OAUTH_CONFIG = {
   tokenUrl: 'https://dash.cloudflare.com/oauth2/token',
   revokeUrl: 'https://dash.cloudflare.com/oauth2/revoke',
   userInfoUrl: 'https://dash.cloudflare.com/oauth2/userinfo',
-  scopes: [
+
+  // ── Tier 1: account discovery + worker/Pages/KV/D1 deploy ──────────
+  SCOPES_BASIC: [
     'account-settings.read',
     'user-details.read',
+    'workers-scripts.read',
     'workers-scripts.write',
+    'workers-routes.read',
     'workers-routes.write',
+    'workers-kv-storage.read',
     'workers-kv-storage.write',
+    'page.read',
     'page.write',
     'd1.write',
+    'd1.metadata_read',
     'zone.read',
+    'memberships.read',
     'offline_access',
   ] as const,
+
+  // ── Tier 2: custom-domain subdomain deploy + SSL automation ────────
+  SCOPES_DOMAIN: [
+    'zone.write',
+    'zone-settings.read',
+    'zone-settings.write',
+    'ssl-and-certificates.read',
+    'ssl-and-certificates.write',
+  ] as const,
+
+  // ── Tier 3: full platform surface (R2 / Vectorize / Queues / AI / Tunnels) ──
+  SCOPES_PLATFORM: [
+    'vectorize.read',
+    'vectorize.write',
+    'workers-r2.read',
+    'workers-r2.write',
+    'workers-r2-bucket-item.read',
+    'workers-r2-bucket-item.write',
+    'queues.read',
+    'queues.write',
+    'pipelines.read',
+    'pipelines.write',
+    'pipelines.send',
+    'ai.read',
+    'ai.write',
+    'workers-observability.read',
+    'workers-tail.read',
+    'workers-ci.read',
+    'teams.read',
+    'teams.write',
+    'secrets-store.read',
+    'secrets-store.write',
+    'containers.read',
+    'containers.write',
+    'account-logs.read',
+    'logs.read',
+    'account-settings.write',
+  ] as const,
+
+  // Union — what gets registered on the OAuth client.
+  scopes: [
+    'account-settings.read',
+    'account-settings.write',
+    'user-details.read',
+    'memberships.read',
+    'workers-scripts.read',
+    'workers-scripts.write',
+    'workers-routes.read',
+    'workers-routes.write',
+    'workers-kv-storage.read',
+    'workers-kv-storage.write',
+    'page.read',
+    'page.write',
+    'd1.write',
+    'd1.metadata_read',
+    'zone.read',
+    'zone.write',
+    'zone-settings.read',
+    'zone-settings.write',
+    'ssl-and-certificates.read',
+    'ssl-and-certificates.write',
+    'vectorize.read',
+    'vectorize.write',
+    'workers-r2.read',
+    'workers-r2.write',
+    'workers-r2-bucket-item.read',
+    'workers-r2-bucket-item.write',
+    'queues.read',
+    'queues.write',
+    'pipelines.read',
+    'pipelines.write',
+    'pipelines.send',
+    'ai.read',
+    'ai.write',
+    'workers-observability.read',
+    'workers-tail.read',
+    'workers-ci.read',
+    'teams.read',
+    'teams.write',
+    'secrets-store.read',
+    'secrets-store.write',
+    'containers.read',
+    'containers.write',
+    'account-logs.read',
+    'logs.read',
+    'offline_access',
+  ] as const,
+
   isConfigured(): boolean {
     return this.clientId.length > 0 && !this.clientId.startsWith('REPLACE_');
   },
 };
+
+export type AuthTier = 'basic' | 'domain' | 'platform' | 'full';
+
+export function scopesForTier(tier: AuthTier): readonly string[] {
+  const c = CF_OAUTH_CONFIG;
+  switch (tier) {
+    case 'basic':    return c.SCOPES_BASIC;
+    case 'domain':   return [...c.SCOPES_BASIC, ...c.SCOPES_DOMAIN];
+    case 'platform': return [...c.SCOPES_BASIC, ...c.SCOPES_DOMAIN, ...c.SCOPES_PLATFORM];
+    case 'full':     return c.scopes;
+  }
+}
 
 type PendingFlow = {
   verifier: string;
@@ -92,7 +200,7 @@ function clearPending(): void {
   sessionStorage.removeItem(PENDING_KEY);
 }
 
-export async function beginAuthorize(redirectAfter: string = '/app'): Promise<void> {
+export async function beginAuthorize(redirectAfter: string = '/app', tier: AuthTier = 'basic'): Promise<void> {
   if (!CF_OAUTH_CONFIG.isConfigured()) {
     throw new Error(
       'CF_OAUTH_CLIENT_ID not set. Create a Cloudflare OAuth client (Manage Account → OAuth clients) and paste its Client ID into src/lib/cfOAuth.ts.'
@@ -107,7 +215,7 @@ export async function beginAuthorize(redirectAfter: string = '/app'): Promise<vo
   url.searchParams.set('response_type', 'code');
   url.searchParams.set('client_id', CF_OAUTH_CONFIG.clientId);
   url.searchParams.set('redirect_uri', getRedirectUri());
-  url.searchParams.set('scope', CF_OAUTH_CONFIG.scopes.join(' '));
+  url.searchParams.set('scope', scopesForTier(tier).join(' '));
   url.searchParams.set('state', state);
   url.searchParams.set('code_challenge', challenge);
   url.searchParams.set('code_challenge_method', 'S256');

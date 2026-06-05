@@ -1,4 +1,4 @@
-# PATCH the existing OpenThink3 OAuth client to add or update redirect_uris + cors origins.
+# PATCH the existing OpenThink3 OAuth client to add or update scopes / redirect_uris / cors origins.
 # Requires an API token with `Account Settings: Edit` permission (must be set in env).
 #
 # Usage:
@@ -31,6 +31,58 @@ $body = @{
     "https://openthink-harness.pages.dev",
     "https://beta3.open-think.app",
     "https://open-think.app"
+  )
+  # Union of all scope tiers (basic + domain + platform).
+  # Source of truth: src/lib/cfOAuth.ts:CF_OAUTH_CONFIG.scopes
+  scopes = @(
+    # Tier 1 — basic (account discovery + worker/Pages/KV/D1 deploy)
+    "account-settings.read",
+    "account-settings.write",
+    "user-details.read",
+    "memberships.read",
+    "workers-scripts.read",
+    "workers-scripts.write",
+    "workers-routes.read",
+    "workers-routes.write",
+    "workers-kv-storage.read",
+    "workers-kv-storage.write",
+    "page.read",
+    "page.write",
+    "d1.write",
+    "d1.metadata_read",
+    "zone.read",
+    # Tier 2 — custom-domain subdomain deploy + SSL automation
+    "zone.write",
+    "zone-settings.read",
+    "zone-settings.write",
+    "ssl-and-certificates.read",
+    "ssl-and-certificates.write",
+    # Tier 3 — full platform surface
+    "vectorize.read",
+    "vectorize.write",
+    "workers-r2.read",
+    "workers-r2.write",
+    "workers-r2-bucket-item.read",
+    "workers-r2-bucket-item.write",
+    "queues.read",
+    "queues.write",
+    "pipelines.read",
+    "pipelines.write",
+    "pipelines.send",
+    "ai.read",
+    "ai.write",
+    "workers-observability.read",
+    "workers-tail.read",
+    "workers-ci.read",
+    "teams.read",
+    "teams.write",
+    "secrets-store.read",
+    "secrets-store.write",
+    "containers.read",
+    "containers.write",
+    "account-logs.read",
+    "logs.read",
+    "offline_access"
   )
 } | ConvertTo-Json -Depth 6
 

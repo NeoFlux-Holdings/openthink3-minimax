@@ -90,9 +90,6 @@ export interface Env {
   // Webhook receiver.
   GITHUB_WEBHOOK_URL?: string;
   GITHUB_WEBHOOK_SECRET?: string;
-  // CF OAuth
-  OAUTH_CLIENT_ID?: string;
-  SESSION_SECRET?: string;
 }
 
 // OrchestratorDO acts as the MCP Server (Agent B)
