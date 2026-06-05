@@ -17,6 +17,12 @@ id = "4239437890d8481abd708bd4bdf80890"
 binding = "ARTIFACTS"
 id = "2b745f0f041b40279d8f013afee9ef5c"
 
+# Bind to R2 for build artifacts. The latest build lives at builds/latest/*
+# and is Direct-Uploaded into every new per-agent Pages project.
+[[r2_buckets]]
+binding = "AGENT_BUILDS"
+bucket_name = "agent-builds"
+
 # Bind to Durable Objects for Thread state
 [[durable_objects.bindings]]
 name = "THREAD_DO"

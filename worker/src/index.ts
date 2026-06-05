@@ -60,6 +60,7 @@ export interface Env {
   ORCHESTRATOR_DO: DurableObjectNamespace<OrchestratorDO>;
   OPENTHINK3_DB: D1Database;
   GBRAIN_PAGES: VectorizeIndex;
+  AGENT_BUILDS: R2Bucket;
   // New intelligence stack secrets
   EXE_DEV_TOKEN?: string;
   GBRAIN_VM_URL?: string;
@@ -1066,10 +1067,126 @@ async function ghAppApi(env: Env, request: Request, path: string, init: RequestI
   return body;
 }
 
+// ── Direct Upload helper: push a set of files to a Pages project ──────
+async function directUploadToPages(
+  env: Env,
+  request: Request,
+  accountId: string,
+  projectName: string,
+  files: Array<{ path: string; content: ArrayBuffer | Uint8Array | string }>,
+): Promise<{ deploymentId: string; fileCount: number; totalBytes: number }> {
+  const enc = new TextEncoder();
+  const manifest: Record<string, { sha256: string; size: number }> = {};
+  const normalized: Array<{ path: string; bytes: Uint8Array }> = [];
+  for (const f of files) {
+    const bytes = typeof f.content === "string" ? enc.encode(f.content) : f.content instanceof Uint8Array ? f.content : new Uint8Array(f.content);
+    const hashBuf = await crypto.subtle.digest("SHA-256", bytes);
+    const sha256 = Array.from(new Uint8Array(hashBuf)).map((b) => b.toString(16).padStart(2, "0")).join("");
+    const path = f.path.startsWith("/") ? f.path.slice(1) : f.path;
+    manifest[path] = { sha256, size: bytes.byteLength };
+    normalized.push({ path, bytes });
+  }
+  const create = await cfFetch(env, request, `/accounts/${accountId}/pages/projects/${projectName}/deployments`, {
+    method: "POST",
+    body: JSON.stringify({ manifest }),
+  });
+  const deploymentId = create?.result?.id as string;
+  let uploadUrl: string = create?.result?.upload_url as string;
+  if (!deploymentId || !uploadUrl) {
+    throw new Error(`Pages Direct Upload: missing deploymentId or upload_url in response: ${JSON.stringify(create).slice(0, 200)}`);
+  }
+  if (uploadUrl.endsWith("/")) uploadUrl = uploadUrl.slice(0, -1);
+  for (const f of normalized) {
+    const fileUrl = `${uploadUrl}/${f.path}`;
+    const r = await fetch(fileUrl, {
+      method: "PUT",
+      body: f.bytes,
+      headers: { "Content-Type": "application/octet-stream" },
+    });
+    if (!r.ok) {
+      const txt = await r.text().catch(() => "");
+      throw new Error(`Pages Direct Upload: PUT ${f.path} failed ${r.status} ${txt.slice(0, 200)}`);
+    }
+  }
+  return { deploymentId, fileCount: normalized.length, totalBytes: normalized.reduce((s, f) => s + f.bytes.byteLength, 0) };
+}
+
+// ── Helper: stream the latest build out of R2 as a list of {path, content} ──
+async function readLatestBuildFromR2(env: Env): Promise<Array<{ path: string; content: ArrayBuffer }>> {
+  if (!env.AGENT_BUILDS) throw new Error("AGENT_BUILDS R2 bucket not configured");
+  const list = await env.AGENT_BUILDS.list({ prefix: "builds/latest/" });
+  const out: Array<{ path: string; content: ArrayBuffer }> = [];
+  for (const obj of list.objects) {
+    if (obj.key.endsWith("/_manifest.json")) continue;
+    const obj2 = await env.AGENT_BUILDS.get(obj.key);
+    if (!obj2) continue;
+    out.push({
+      path: obj.key.replace(/^builds\/latest\//, ""),
+      content: await obj2.arrayBuffer(),
+    });
+  }
+  if (out.length === 0) {
+    throw new Error("No build found in R2 at builds/latest/. POST a build to /api/cf/agent/publish-build first.");
+  }
+  return out;
+}
+
 async function handleCf(env: Env, request: Request): Promise<Response> {
   const url = new URL(request.url);
   const subpath = url.pathname.replace(/^\/api\/cf/, "");
   const method = request.method;
+
+  // ── /api/cf/agent/publish-build — upload a build (multipart) to R2
+  // Form fields: "files" (one or more file blobs). The relative file name
+  // is preserved (e.g. dist/index.html -> builds/latest/index.html).
+  // Overwrites builds/latest/* atomically.
+  if (subpath === "/agent/publish-build" && method === "POST") {
+    if (!env.AGENT_BUILDS) return jsonResp({ error: "AGENT_BUILDS R2 bucket not configured" }, 503);
+    let formData: FormData;
+    try { formData = await request.formData(); } catch {
+      return jsonResp({ error: "Expected multipart/form-data with 'files' field" }, 400);
+    }
+    const files = formData.getAll("files") as unknown as File[];
+    if (!files || files.length === 0) {
+      return jsonResp({ error: "No files uploaded. Send multipart/form-data with 'files' field." }, 400);
+    }
+    const uploaded: Array<{ path: string; size: number }> = [];
+    for (const file of files) {
+      if (!file || typeof file === "string") continue;
+      const path = (file as any).name || "unknown";
+      const buf = await (file as any).arrayBuffer();
+      const ct = (file as any).type || "application/octet-stream";
+      await env.AGENT_BUILDS.put(`builds/latest/${path}`, buf, {
+        httpMetadata: { contentType: ct },
+      });
+      uploaded.push({ path, size: buf.byteLength });
+    }
+    const manifest = {
+      uploadedAt: new Date().toISOString(),
+      fileCount: uploaded.length,
+      totalBytes: uploaded.reduce((s, f) => s + f.size, 0),
+      files: uploaded,
+    };
+    await env.AGENT_BUILDS.put("builds/latest/_manifest.json", JSON.stringify(manifest, null, 2), {
+      httpMetadata: { contentType: "application/json" },
+    });
+    return jsonResp({ ok: true, ...manifest });
+  }
+
+  // ── /api/cf/agent/build/list — list files in builds/latest/
+  if (subpath === "/agent/build/list" && method === "GET") {
+    if (!env.AGENT_BUILDS) return jsonResp({ error: "AGENT_BUILDS R2 bucket not configured" }, 503);
+    const list = await env.AGENT_BUILDS.list({ prefix: "builds/latest/" });
+    const files = list.objects
+      .filter((o) => !o.key.endsWith("/_manifest.json"))
+      .map((o) => ({ path: o.key.replace(/^builds\/latest\//, ""), size: o.size, uploaded: o.uploaded }));
+    let manifest: any = null;
+    const m = await env.AGENT_BUILDS.get("builds/latest/_manifest.json");
+    if (m) {
+      try { manifest = JSON.parse(await m.text()); } catch { /* ignore */ }
+    }
+    return jsonResp({ files, manifest });
+  }
 
   // ── /api/cf/status — diagnostic (what's configured, what's not)
   if (subpath === "/status" && method === "GET") {
@@ -1469,34 +1586,18 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
       return jsonResp({ error: `Branch created, config commit failed: ${err?.message ?? err}` }, 502);
     }
 
-    // Step 3: create the Pages project bound to the branch.
+    // Step 3: create the Pages project (Direct Upload only — no Git connection).
+    // We upload the build from R2 in step 3b.
     try {
       const create: any = await cfFetch(env, request, `/accounts/${accountId}/pages/projects`, {
         method: "POST",
         body: JSON.stringify({
           name: projectName,
           production_branch: branch,
-          build_config: {
-            build_command: "npm run build",
-            destination_dir: "dist",
-            root_dir: "",
-          },
-          source: {
-            type: "github",
-            config: {
-              owner: ghOwner,
-              repo_name: ghRepo,
-              production_branch: branch,
-              build_command: "npm run build",
-              destination_dir: "dist",
-              root_dir: "",
-              deploy_on_push: true,
-            },
-          },
         }),
       });
       agent.pagesProjectId = create?.result?.id;
-      pushHistory("pages-create", true, `Created Pages project ${projectName} bound to ${branch}`, {
+      pushHistory("pages-create", true, `Created Pages project ${projectName}`, {
         id: create?.result?.id,
         subdomain: create?.result?.subdomain,
       });
@@ -1507,9 +1608,29 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
       await env.ARTIFACTS.put(`agent:${sanitized}`, JSON.stringify(agent));
       return jsonResp({
         error: `Branch + config ready, but Pages project creation failed: ${msg}`,
-        hint: "The CF account may need GitHub authorization: dash.cloudflare.com -> Pages -> Settings -> Builds -> Connect to Git.",
+        hint: "Direct Upload only — no Git connection required. Verify the CF token has account:pages:edit.",
         agent,
       }, 502);
+    }
+
+    // Step 3b: Direct Upload the latest R2 build to the new Pages project.
+    // This is what actually makes the agent live at <project>.pages.dev.
+    let initialDeployment: { deploymentId: string; fileCount: number; totalBytes: number } | null = null;
+    if (env.AGENT_BUILDS) {
+      try {
+        const buildFiles = await readLatestBuildFromR2(env);
+        initialDeployment = await directUploadToPages(env, request, accountId, projectName, buildFiles);
+        pushHistory("pages-deploy", true,
+          `Direct Uploaded ${initialDeployment.fileCount} files (${initialDeployment.totalBytes} bytes)`,
+          { deploymentId: initialDeployment.deploymentId });
+      } catch (err: any) {
+        const msg = String(err?.message ?? err);
+        pushHistory("pages-deploy", false, `Initial Direct Upload failed: ${msg}`);
+        // Don't bail — the project is created and the branch has config.
+        // The user can re-publish via /api/cf/deploy/agent/:name/republish.
+      }
+    } else {
+      pushHistory("pages-deploy", false, "AGENT_BUILDS R2 bucket not configured — skipped initial deploy");
     }
 
     // Step 4: attach custom domain to the Pages project.
@@ -1540,6 +1661,8 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
       ok: true,
       agent,
       url: `https://${body.customDomain}`,
+      pagesUrl: `https://${projectName}.pages.dev`,
+      initialDeployment: initialDeployment ?? null,
     });
   }
 
@@ -1633,6 +1756,47 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
       return jsonResp({ ok: false, error: "Some files failed to commit", errors, agent }, 502);
     }
     return jsonResp({ ok: true, commitSha: lastSha, branch: agent.branch, fileCount: body.files.length });
+  }
+
+  // ── /api/cf/deploy/agent/:name/republish — re-Direct-Upload the latest R2 build
+  // Useful when the user publishes a new build but Pages hasn't picked it up
+  // (Direct Upload doesn't auto-deploy — you have to push it again).
+  const republishMatch = subpath.match(/^\/deploy\/agent\/([^\/]+)\/republish$/);
+  if (republishMatch && method === "POST") {
+    const name = republishMatch[1];
+    const agent = (await env.ARTIFACTS.get(`agent:${name}`, { type: "json" })) as AgentRecord | null;
+    if (!agent) return jsonResp({ error: `Agent '${name}' not found` }, 404);
+    const { accountId } = resolveCfCreds(env, request);
+    if (!accountId) {
+      return jsonResp({ error: "CF account ID required" }, 400);
+    }
+    if (!env.AGENT_BUILDS) return jsonResp({ error: "AGENT_BUILDS R2 bucket not configured" }, 503);
+    try {
+      const buildFiles = await readLatestBuildFromR2(env);
+      const deploy = await directUploadToPages(env, request, accountId, agent.pagesProjectName, buildFiles);
+      agent.lastSyncedAt = Date.now();
+      agent.history.unshift({
+        id: `republish-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        ts: Date.now(),
+        type: "republish",
+        ok: true,
+        summary: `Republished ${deploy.fileCount} files to ${agent.pagesProjectName}`,
+        details: { deploymentId: deploy.deploymentId, totalBytes: deploy.totalBytes },
+      });
+      await env.ARTIFACTS.put(`agent:${name}`, JSON.stringify(agent));
+      return jsonResp({ ok: true, ...deploy, url: `https://${agent.customDomain}` });
+    } catch (err: any) {
+      const msg = String(err?.message ?? err);
+      agent.history.unshift({
+        id: `republish-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        ts: Date.now(),
+        type: "republish",
+        ok: false,
+        summary: `Republish failed: ${msg}`,
+      });
+      await env.ARTIFACTS.put(`agent:${name}`, JSON.stringify(agent));
+      return jsonResp({ error: `Republish failed: ${msg}` }, 502);
+    }
   }
 
   // ── /api/agent/:name/data — read a file from the agent's branch
