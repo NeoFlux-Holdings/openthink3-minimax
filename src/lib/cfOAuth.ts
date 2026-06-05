@@ -219,6 +219,10 @@ export async function beginAuthorize(redirectAfter: string = '/app', tier: AuthT
   url.searchParams.set('state', state);
   url.searchParams.set('code_challenge', challenge);
   url.searchParams.set('code_challenge_method', 'S256');
+  // Force a full consent screen (show ALL requested scopes, not just the
+  // delta). Without this, CF only shows scopes the user hasn't already
+  // granted, even if the bundle now requests more.
+  url.searchParams.set('prompt', 'consent');
   window.location.href = url.toString();
 }
 
