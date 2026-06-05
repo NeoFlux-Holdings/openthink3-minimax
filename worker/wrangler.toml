@@ -48,14 +48,17 @@ index_name = "gbrain-pages"
 [triggers]
 crons = ["0 5 * * *", "0 6 * * *"]
 
-# Non-secret environment variables. Set with:
-#   npx wrangler secret put CF_API_TOKEN
-#   npx wrangler secret put GH_TOKEN
-#   npx wrangler secret put SESSION_SECRET
-#   npx wrangler secret put OAUTH_CLIENT_ID
-#   npx wrangler secret put GITHUB_APP_PRIVATE_KEY
-#   npx wrangler secret put GITHUB_INSTALL_TOKEN_KEY
-# and via `npx wrangler deploy` env={...} for the vars below.
+# Non-secret environment variables. Set the secrets with:
+#   cd worker
+#   npx wrangler secret put SESSION_SECRET                # 32+ random chars
+#   npx wrangler secret put GITHUB_APP_PRIVATE_KEY  < ../path/to/app.pem
+#   npx wrangler secret put GITHUB_INSTALL_TOKEN_KEY      # openssl rand -hex 32
+#   npx wrangler secret put GITHUB_WEBHOOK_SECRET         # same value as in .env
+#   npx wrangler secret put GITHUB_CLIENT_SECRET          # same value as in .env
+#
+# For local dev, run `node scripts/load-dev-secrets.mjs` once and it will
+# build worker/.dev.vars from the project-root .env + the PEM file at
+# GITHUB_PRIVATE_KEY_FILE.
 [vars]
 CF_ACCOUNT_ID = ""
 GH_REPO = "NeoFlux-Holdings/openthink3-minimax"
@@ -65,9 +68,17 @@ OAUTH_USERINFO_URL = "https://dash.cloudflare.com/oauth2/userinfo"
 OAUTH_REVOKE_URL = "https://dash.cloudflare.com/oauth2/revoke"
 # Default worker host (used to detect custom-domain requests that should require auth).
 WORKER_DEFAULT_HOST = "openthink3-worker.thomas-zarebczan.workers.dev"
-# GitHub App installation flow (preferred over GH_TOKEN PAT for per-user scoping).
-# Set GITHUB_APP_PRIVATE_KEY and GITHUB_INSTALL_TOKEN_KEY via `wrangler secret put`.
-# GITHUB_APP_PRIVATE_KEY: multi-line PEM with \n escapes (e.g. "$(cat app.pem)").
-# GITHUB_INSTALL_TOKEN_KEY: 32+ byte random hex for AES-GCM (e.g. `openssl rand -hex 32`).
-GITHUB_APP_ID = ""
-GITHUB_APP_SLUG = ""
+
+# GitHub App (https://github.com/apps/open-think-auth). GITHUB_APP_ID + GITHUB_APP_SLUG
+# are public. Set GITHUB_APP_PRIVATE_KEY + GITHUB_INSTALL_TOKEN_KEY via `wrangler secret put`.
+GITHUB_APP_ID = "3967761"
+GITHUB_APP_SLUG = "open-think-auth"
+# GitHub OAuth client credentials (Device Flow + "Sign in with GitHub" via the App).
+# GITHUB_CLIENT_ID is public. GITHUB_CLIENT_SECRET is a secret.
+GITHUB_CLIENT_ID = "Iv23licZBCvE6dJMUQ0v"
+# Where GitHub redirects after user OAuth / where it shows errors (both are SPA routes).
+GITHUB_OAUTH_CALLBACK = "https://beta3.open-think.app/oauth/github/callback"
+GITHUB_OAUTH_ERROR_URL = "https://beta3.open-think.app/oauth/github/errors"
+# Webhook receiver — GitHub delivers events here. The worker validates HMAC-SHA256
+# using GITHUB_WEBHOOK_SECRET (set via `wrangler secret put`).
+GITHUB_WEBHOOK_URL = "https://beta3.open-think.app/oauth/github/errors"

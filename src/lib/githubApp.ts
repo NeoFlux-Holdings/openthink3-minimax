@@ -240,3 +240,96 @@ export function parseFilesTextarea(text: string): Array<{ path: string; content:
   }
   return out;
 }
+
+export interface GhUserTokenStatus {
+  signedIn: boolean;
+  configured: boolean;
+  user: GhAppAccount | null;
+  scope: string | null;
+}
+
+export interface GhDeviceCodeStart {
+  ok: boolean;
+  userCode: string;
+  verificationUri: string;
+  expiresIn: number;
+  interval: number;
+  scope: string;
+}
+
+export type GhDevicePollResult =
+  | { ok: true; status: "ok"; user: GhAppAccount | null; scope: string }
+  | { ok: false; status: "pending" }
+  | { ok: false; status: "slow_down"; interval?: number }
+  | { ok: false; status: "expired" | "denied" | "error"; error?: string };
+
+export async function getUserTokenStatus(): Promise<GhUserTokenStatus> {
+  return apiFetch<GhUserTokenStatus>("/api/github/oauth/status");
+}
+
+export async function exchangeCode(code: string, redirectUri: string): Promise<GhUserTokenStatus> {
+  const data = await apiFetch<{ ok: boolean; user: GhAppAccount | null; scope: string }>(
+    "/api/github/oauth/token",
+    { method: "POST", body: JSON.stringify({ code, redirectUri }) },
+  );
+  return { signedIn: !!data.ok, configured: true, user: data.user ?? null, scope: data.scope ?? null };
+}
+
+export async function revokeUserToken(): Promise<void> {
+  await apiFetch<{ ok: boolean }>("/api/github/oauth/revoke", { method: "POST" });
+}
+
+export async function beginDeviceFlow(scope: string = "read:user user:email repo"): Promise<GhDeviceCodeStart> {
+  return apiFetch<GhDeviceCodeStart>("/api/github/device/code", {
+    method: "POST",
+    body: JSON.stringify({ scope }),
+  });
+}
+
+export async function pollDeviceToken(): Promise<GhDevicePollResult> {
+  return apiFetch<GhDevicePollResult>("/api/github/device/token", { method: "POST" });
+}
+
+export async function cancelDeviceFlow(): Promise<void> {
+  await apiFetch<{ ok: boolean }>("/api/github/device/cancel", { method: "POST" });
+}
+
+export function buildAuthorizeUrl(clientId: string, redirectUri: string, state: string, scope: string): string {
+  const url = new URL("https://github.com/login/oauth/authorize");
+  url.searchParams.set("client_id", clientId);
+  url.searchParams.set("redirect_uri", redirectUri);
+  url.searchParams.set("state", state);
+  url.searchParams.set("scope", scope);
+  url.searchParams.set("allow_signup", "true");
+  return url.toString();
+}
+
+export interface GhWebhookEvent {
+  key: string;
+  event: string;
+  deliveryId: string;
+  receivedAt: number;
+  action?: string;
+  sender?: string;
+  repository?: string;
+  pull_request?: { number: number; title: string; state: string; html_url: string };
+  issue?: { number: number; title: string; state: string; html_url: string };
+}
+
+export async function getRecentWebhooks(event?: string): Promise<GhWebhookEvent[]> {
+  const qs = event ? `?event=${encodeURIComponent(event)}` : "";
+  const data = await apiFetch<{ events: GhWebhookEvent[] }>(`/api/github/webhook/recent${qs}`);
+  return Array.isArray(data.events) ? data.events : [];
+}
+
+export function randomState(): string {
+  const bytes = new Uint8Array(24);
+  if (typeof crypto !== "undefined" && crypto.getRandomValues) {
+    crypto.getRandomValues(bytes);
+  } else {
+    for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+  }
+  let s = "";
+  for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}

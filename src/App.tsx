@@ -1,6 +1,8 @@
 import { useEffect, useReducer, useState, type Dispatch, type SetStateAction } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useParams } from 'react-router-dom';
 import OAuthCallback from './components/OAuthCallback';
+import GithubCallback from './components/GithubCallback';
+import GithubError from './components/GithubError';
 import { Cloud, ShieldCheck, Loader2 } from 'lucide-react';
 import { Pin } from 'lucide-react';
 import Sidebar from './components/Sidebar';
@@ -476,6 +478,8 @@ function App() {
         <Route path="/deploy" element={<DeployFlow />} />
         <Route path="/app" element={<AppView />} />
         <Route path="/oauth/callback" element={<OAuthCallback />} />
+        <Route path="/oauth/github/callback" element={<GithubCallback />} />
+        <Route path="/oauth/github/errors" element={<GithubError />} />
         <Route path="/app-account" element={<AccountHub isStandalone={true} />} />
         <Route path="/benchmarks" element={<BenchmarksView />} />
         <Route path="/bridge" element={<TunnelBridgePanel />} />

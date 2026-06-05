@@ -26,6 +26,7 @@ import {
   type OpenPRResult,
   type CommentIssueResult,
 } from '../lib/githubApp';
+import GithubUserSignin from './GithubUserSignin';
 
 type Status = GhInstallStatus | null;
 
@@ -522,6 +523,8 @@ const GitHubAppPanel: React.FC = () => {
             (via <code>wrangler secret put</code>) on this worker.
           </div>
         )}
+
+        <GithubUserSignin onUserChange={() => { void refreshStatus(); }} />
 
         {loading && !status ? (
           <section style={panel}>

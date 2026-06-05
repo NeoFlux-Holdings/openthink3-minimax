@@ -675,3 +675,431 @@ export function isGithubConfigured(env: Env): boolean {
 }
 
 export { REPO_CACHE_TTL_MS };
+
+// ---------------------------------------------------------------------------
+// User OAuth (Device Flow + "Sign in with GitHub" code exchange + Webhooks)
+// ---------------------------------------------------------------------------
+
+function isUserOAuthConfigured(env: Env): boolean {
+  return !!(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET);
+}
+
+function userOAuthNotConfiguredError(): Response {
+  return jsonResp(
+    {
+      error: "github_user_oauth_not_configured",
+      description: "Set GITHUB_CLIENT_ID (in [vars]) and GITHUB_CLIENT_SECRET (via `wrangler secret put`).",
+    },
+    503,
+  );
+}
+
+function userTokenKey(session: SessionLite | null): string | null {
+  return accountKey(session);
+}
+
+async function githubApiPostForm(url: string, body: Record<string, string>, headers: Record<string, string> = {}): Promise<{ status: number; body: any }> {
+  const r = await fetch(url, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/x-www-form-urlencoded",
+      ...headers,
+    },
+    body: new URLSearchParams(body).toString(),
+  });
+  let parsed: any = null;
+  const text = await r.text();
+  try { parsed = text ? JSON.parse(text) : null; } catch { parsed = { raw: text }; }
+  return { status: r.status, body: parsed };
+}
+
+async function encryptUserToken(plaintext: string, keyHex: string): Promise<string> {
+  return encryptToken(plaintext, keyHex);
+}
+
+async function decryptUserToken(blob: string, keyHex: string): Promise<string> {
+  return decryptToken(blob, keyHex);
+}
+
+export async function handleGithubDeviceCode(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  if (!isUserOAuthConfigured(env)) return userOAuthNotConfiguredError();
+  if (!env.GITHUB_INSTALL_TOKEN_KEY) {
+    return jsonResp(
+      { error: "github_install_key_missing", description: "Set GITHUB_INSTALL_TOKEN_KEY via `wrangler secret put`." },
+      503,
+    );
+  }
+  const session = await readSession(request, env);
+  const key = userTokenKey(session);
+  if (!key) return jsonResp({ error: "no_session" }, 401);
+
+  const body = (await request.json().catch(() => ({}))) as { scope?: string };
+  const scope = (body.scope || "read:user user:email repo").trim();
+  const r = await githubApiPostForm(
+    "https://github.com/login/device/code",
+    {
+      client_id: env.GITHUB_CLIENT_ID!,
+      scope,
+    },
+    { Accept: "application/json" },
+  );
+  if (r.status !== 200) {
+    return jsonResp({ error: "device_code_failed", status: r.status, detail: r.body }, r.status);
+  }
+  const expiresIn = Number(r.body.expires_in) || 900;
+  const interval = Math.max(5, Number(r.body.interval) || 5);
+  const verificationUri = String(r.body.verification_uri || "https://github.com/login/device");
+
+  const deviceCodeCiphertext = await encryptUserToken(String(r.body.device_code), env.GITHUB_INSTALL_TOKEN_KEY);
+  const pending = {
+    deviceCodeCiphertext,
+    userCode: String(r.body.user_code),
+    verificationUri,
+    expiresAt: Date.now() + expiresIn * 1000,
+    interval,
+    scope,
+    clientId: env.GITHUB_CLIENT_ID!,
+    accountId: key,
+    createdAt: Date.now(),
+  };
+  await env.ARTIFACTS.put(`gh:device:${key}`, JSON.stringify(pending), {
+    expirationTtl: Math.ceil(expiresIn / 1000) + 60,
+  });
+  return jsonResp({
+    ok: true,
+    userCode: pending.userCode,
+    verificationUri: pending.verificationUri,
+    expiresIn,
+    interval,
+    scope,
+  });
+}
+
+export async function handleGithubDeviceToken(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  if (!isUserOAuthConfigured(env)) return userOAuthNotConfiguredError();
+  if (!env.GITHUB_INSTALL_TOKEN_KEY) {
+    return jsonResp(
+      { error: "github_install_key_missing", description: "Set GITHUB_INSTALL_TOKEN_KEY via `wrangler secret put`." },
+      503,
+    );
+  }
+  const session = await readSession(request, env);
+  const key = userTokenKey(session);
+  if (!key) return jsonResp({ error: "no_session" }, 401);
+
+  const raw = await env.ARTIFACTS.get(`gh:device:${key}`);
+  if (!raw) {
+    return jsonResp({ ok: false, status: "expired", error: "no_pending_device_flow" }, 404);
+  }
+  let pending: any;
+  try { pending = JSON.parse(raw); } catch {
+    await env.ARTIFACTS.delete(`gh:device:${key}`);
+    return jsonResp({ ok: false, status: "expired", error: "device_state_corrupt" }, 500);
+  }
+  if (Date.now() > pending.expiresAt) {
+    await env.ARTIFACTS.delete(`gh:device:${key}`);
+    return jsonResp({ ok: false, status: "expired", error: "device_code_expired" }, 410);
+  }
+
+  const deviceCode = await decryptUserToken(pending.deviceCodeCiphertext, env.GITHUB_INSTALL_TOKEN_KEY);
+  const r = await githubApiPostForm(
+    "https://github.com/login/oauth/access_token",
+    {
+      client_id: env.GITHUB_CLIENT_ID!,
+      device_code: deviceCode,
+      grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+    },
+    { Accept: "application/json" },
+  );
+  if (r.status !== 200) {
+    return jsonResp({ ok: false, status: "error", error: `github_${r.status}`, detail: r.body }, r.status);
+  }
+  const err = r.body?.error as string | undefined;
+  if (err === "authorization_pending") {
+    return jsonResp({ ok: false, status: "pending" });
+  }
+  if (err === "slow_down") {
+    return jsonResp({ ok: false, status: "slow_down", interval: Number(r.body.interval) || pending.interval + 5 });
+  }
+  if (err === "expired_token") {
+    await env.ARTIFACTS.delete(`gh:device:${key}`);
+    return jsonResp({ ok: false, status: "expired", error: "device_code_expired" }, 410);
+  }
+  if (err === "access_denied") {
+    await env.ARTIFACTS.delete(`gh:device:${key}`);
+    return jsonResp({ ok: false, status: "denied", error: "user_denied" }, 403);
+  }
+  if (err || !r.body?.access_token) {
+    return jsonResp({ ok: false, status: "error", error: err ?? "no_token", detail: r.body }, 400);
+  }
+
+  let user: { id: number; login: string; avatar_url?: string } | null = null;
+  try {
+    const me = await fetch("https://api.github.com/user", {
+      headers: {
+        Authorization: `Bearer ${r.body.access_token}`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+    });
+    if (me.ok) {
+      const meBody: any = await me.json();
+      user = { id: meBody.id, login: meBody.login, avatar_url: meBody.avatar_url };
+    }
+  } catch {
+    user = null;
+  }
+
+  const ciphertext = await encryptUserToken(String(r.body.access_token), env.GITHUB_INSTALL_TOKEN_KEY);
+  const userToken = {
+    accessTokenCiphertext: ciphertext,
+    scope: String(r.body.scope || pending.scope || ""),
+    tokenType: String(r.body.token_type || "bearer"),
+    obtainedAt: Date.now(),
+    user,
+  };
+  await env.ARTIFACTS.put(`gh:user:token:${key}`, JSON.stringify(userToken));
+  await env.ARTIFACTS.delete(`gh:device:${key}`);
+  return jsonResp({ ok: true, status: "ok", user, scope: userToken.scope });
+}
+
+export async function handleGithubDeviceCancel(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  const session = await readSession(request, env);
+  const key = userTokenKey(session);
+  if (!key) return jsonResp({ error: "no_session" }, 401);
+  await env.ARTIFACTS.delete(`gh:device:${key}`);
+  return jsonResp({ ok: true });
+}
+
+export async function handleGithubOAuthToken(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  if (!isUserOAuthConfigured(env)) return userOAuthNotConfiguredError();
+  if (!env.GITHUB_INSTALL_TOKEN_KEY) {
+    return jsonResp(
+      { error: "github_install_key_missing", description: "Set GITHUB_INSTALL_TOKEN_KEY via `wrangler secret put`." },
+      503,
+    );
+  }
+  const session = await readSession(request, env);
+  const key = userTokenKey(session);
+  if (!key) return jsonResp({ error: "no_session" }, 401);
+
+  const body = (await request.json().catch(() => ({}))) as {
+    code?: string;
+    state?: string;
+    redirectUri?: string;
+  };
+  if (!body.code) return jsonResp({ error: "missing_code" }, 400);
+  const redirectUri = body.redirectUri || env.GITHUB_OAUTH_CALLBACK || "";
+  const r = await githubApiPostForm(
+    "https://github.com/login/oauth/access_token",
+    {
+      client_id: env.GITHUB_CLIENT_ID!,
+      client_secret: env.GITHUB_CLIENT_SECRET!,
+      code: body.code,
+      redirect_uri: redirectUri,
+    },
+    { Accept: "application/json" },
+  );
+  if (r.status !== 200 || r.body?.error) {
+    return jsonResp(
+      { error: "code_exchange_failed", status: r.status, detail: r.body },
+      r.status === 200 ? 400 : r.status,
+    );
+  }
+  let user: { id: number; login: string; avatar_url?: string } | null = null;
+  try {
+    const me = await fetch("https://api.github.com/user", {
+      headers: {
+        Authorization: `Bearer ${r.body.access_token}`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+    });
+    if (me.ok) {
+      const meBody: any = await me.json();
+      user = { id: meBody.id, login: meBody.login, avatar_url: meBody.avatar_url };
+    }
+  } catch {
+    user = null;
+  }
+  const ciphertext = await encryptUserToken(String(r.body.access_token), env.GITHUB_INSTALL_TOKEN_KEY);
+  const userToken = {
+    accessTokenCiphertext: ciphertext,
+    scope: String(r.body.scope || ""),
+    tokenType: String(r.body.token_type || "bearer"),
+    obtainedAt: Date.now(),
+    user,
+  };
+  await env.ARTIFACTS.put(`gh:user:token:${key}`, JSON.stringify(userToken));
+  return jsonResp({ ok: true, user, scope: userToken.scope });
+}
+
+export async function handleGithubOAuthStatus(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  const session = await readSession(request, env);
+  const key = userTokenKey(session);
+  if (!key) {
+    return jsonResp({ signedIn: false, configured: isUserOAuthConfigured(env) });
+  }
+  const stored = (await env.ARTIFACTS.get(`gh:user:token:${key}`, { type: "json" })) as
+    | { accessTokenCiphertext: string; scope: string; obtainedAt: number; user: any }
+    | null;
+  if (!stored) {
+    return jsonResp({ signedIn: false, configured: true, user: null, scope: null });
+  }
+  return jsonResp({ signedIn: true, configured: true, user: stored.user, scope: stored.scope });
+}
+
+export async function handleGithubOAuthRevoke(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  if (!isUserOAuthConfigured(env)) return userOAuthNotConfiguredError();
+  const session = await readSession(request, env);
+  const key = userTokenKey(session);
+  if (!key) return jsonResp({ error: "no_session" }, 401);
+  const stored = (await env.ARTIFACTS.get(`gh:user:token:${key}`, { type: "json" })) as
+    | { accessTokenCiphertext: string }
+    | null;
+  if (stored) {
+    try {
+      const token = await decryptUserToken(stored.accessTokenCiphertext, env.GITHUB_INSTALL_TOKEN_KEY!);
+      await fetch(`https://api.github.com/applications/${env.GITHUB_CLIENT_ID!}/token`, {
+        method: "DELETE",
+        headers: {
+          Accept: "application/vnd.github+json",
+          Authorization: `Basic ${btoa(`${env.GITHUB_CLIENT_ID}:${env.GITHUB_CLIENT_SECRET}`)}`,
+          "X-GitHub-Api-Version": "2022-11-28",
+        },
+      }).catch(() => null);
+      await fetch(`https://api.github.com/applications/${env.GITHUB_CLIENT_ID!}/grant`, {
+        method: "DELETE",
+        headers: {
+          Accept: "application/vnd.github+json",
+          Authorization: `Basic ${btoa(`${env.GITHUB_CLIENT_ID}:${env.GITHUB_CLIENT_SECRET}`)}`,
+          "X-GitHub-Api-Version": "2022-11-28",
+        },
+        body: JSON.stringify({ access_token: token }),
+      }).catch(() => null);
+    } catch {
+      // ignore
+    }
+  }
+  await env.ARTIFACTS.delete(`gh:user:token:${key}`);
+  return jsonResp({ ok: true });
+}
+
+async function verifyGithubWebhookSignature(
+  request: Request,
+  env: Env,
+): Promise<{ ok: boolean; event?: string; deliveryId?: string; payload?: any; error?: string }> {
+  if (!env.GITHUB_WEBHOOK_SECRET) {
+    return { ok: false, error: "GITHUB_WEBHOOK_SECRET not configured" };
+  }
+  const sigHeader = request.headers.get("X-Hub-Signature-256") || "";
+  if (!sigHeader.startsWith("sha256=")) {
+    return { ok: false, error: "missing or malformed X-Hub-Signature-256" };
+  }
+  const provided = sigHeader.slice(7).trim();
+  const raw = await request.text();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(env.GITHUB_WEBHOOK_SECRET),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const sig = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(raw)));
+  const expected = sig.reduce((s, b) => s + b.toString(16).padStart(2, "0"), "");
+  if (provided.length !== expected.length) {
+    return { ok: false, error: "signature length mismatch" };
+  }
+  let diff = 0;
+  for (let i = 0; i < expected.length; i++) {
+    diff |= expected.charCodeAt(i) ^ provided.charCodeAt(i);
+  }
+  if (diff !== 0) return { ok: false, error: "signature mismatch" };
+  let payload: any = null;
+  try { payload = JSON.parse(raw); } catch { return { ok: false, error: "invalid JSON" }; }
+  return {
+    ok: true,
+    event: request.headers.get("X-GitHub-Event") || undefined,
+    deliveryId: request.headers.get("X-GitHub-Delivery") || undefined,
+    payload,
+  };
+}
+
+export async function handleGithubWebhook(request: Request, env: Env): Promise<Response> {
+  if (request.method !== "POST") return jsonResp({ error: "method_not_allowed" }, 405);
+  const v = await verifyGithubWebhookSignature(request, env);
+  if (!v.ok) {
+    return jsonResp({ error: "invalid_signature", description: v.error }, 401);
+  }
+  const key = `gh:webhook:${v.event}:${v.deliveryId}`;
+  await env.ARTIFACTS.put(
+    key,
+    JSON.stringify({ event: v.event, deliveryId: v.deliveryId, payload: v.payload, receivedAt: Date.now() }),
+    { expirationTtl: 60 * 60 * 24 * 30 },
+  );
+  return jsonResp({ ok: true, event: v.event, deliveryId: v.deliveryId });
+}
+
+export async function handleGithubWebhookRecent(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  const session = await readSession(request, env);
+  if (!session) return jsonResp({ error: "no_session" }, 401);
+  const url = new URL(request.url);
+  const event = url.searchParams.get("event");
+  const list = await env.ARTIFACTS.list({ prefix: "gh:webhook:" });
+  const out: any[] = [];
+  for await (const k of list.keys) {
+    if (event && !k.name.startsWith(`gh:webhook:${event}:`)) continue;
+    const raw = await env.ARTIFACTS.get(k.name);
+    if (!raw) continue;
+    try {
+      const parsed = JSON.parse(raw);
+      out.push({
+        key: k.name,
+        event: parsed.event,
+        deliveryId: parsed.deliveryId,
+        receivedAt: parsed.receivedAt,
+        action: parsed.payload?.action,
+        sender: parsed.payload?.sender?.login,
+        repository: parsed.payload?.repository?.full_name,
+        pull_request: parsed.payload?.pull_request ? {
+          number: parsed.payload.pull_request.number,
+          title: parsed.payload.pull_request.title,
+          state: parsed.payload.pull_request.state,
+          html_url: parsed.payload.pull_request.html_url,
+        } : undefined,
+        issue: parsed.payload?.issue ? {
+          number: parsed.payload.issue.number,
+          title: parsed.payload.issue.title,
+          state: parsed.payload.issue.state,
+          html_url: parsed.payload.issue.html_url,
+        } : undefined,
+      });
+    } catch {
+      // skip
+    }
+  }
+  out.sort((a, b) => b.receivedAt - a.receivedAt);
+  return jsonResp({ events: out.slice(0, 50) });
+}

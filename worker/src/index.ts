@@ -36,6 +36,14 @@ import {
 import {
   handleGithubInstall,
   handleGithubCallback,
+  handleGithubDeviceCode,
+  handleGithubDeviceToken,
+  handleGithubDeviceCancel,
+  handleGithubOAuthToken,
+  handleGithubOAuthStatus,
+  handleGithubOAuthRevoke,
+  handleGithubWebhook,
+  handleGithubWebhookRecent,
   handleGithubRepos,
   handleGithubPR,
   handleGithubIssue,
@@ -73,6 +81,18 @@ export interface Env {
   GITHUB_APP_SLUG?: string;
   GITHUB_APP_PRIVATE_KEY?: string;
   GITHUB_INSTALL_TOKEN_KEY?: string;
+  // GitHub OAuth App credentials (for "Sign in with GitHub" + Device Flow).
+  // GITHUB_CLIENT_ID is public (set in [vars]); GITHUB_CLIENT_SECRET is a secret.
+  GITHUB_CLIENT_ID?: string;
+  GITHUB_CLIENT_SECRET?: string;
+  GITHUB_OAUTH_CALLBACK?: string;
+  GITHUB_OAUTH_ERROR_URL?: string;
+  // Webhook receiver.
+  GITHUB_WEBHOOK_URL?: string;
+  GITHUB_WEBHOOK_SECRET?: string;
+  // CF OAuth
+  OAUTH_CLIENT_ID?: string;
+  SESSION_SECRET?: string;
 }
 
 // OrchestratorDO acts as the MCP Server (Agent B)
@@ -534,6 +554,29 @@ export default {
           case "issues":
             if (request.method !== "POST") return jsonResp({ error: "Method not allowed" }, 405);
             return handleGithubIssue(request, env);
+          case "device/code":
+            if (request.method !== "POST") return jsonResp({ error: "Method not allowed" }, 405);
+            return handleGithubDeviceCode(request, env);
+          case "device/token":
+            if (request.method !== "POST") return jsonResp({ error: "Method not allowed" }, 405);
+            return handleGithubDeviceToken(request, env);
+          case "device/cancel":
+            if (request.method !== "POST") return jsonResp({ error: "Method not allowed" }, 405);
+            return handleGithubDeviceCancel(request, env);
+          case "oauth/token":
+            if (request.method !== "POST") return jsonResp({ error: "Method not allowed" }, 405);
+            return handleGithubOAuthToken(request, env);
+          case "oauth/status":
+            if (request.method !== "GET") return jsonResp({ error: "Method not allowed" }, 405);
+            return handleGithubOAuthStatus(request, env);
+          case "oauth/revoke":
+            if (request.method !== "POST") return jsonResp({ error: "Method not allowed" }, 405);
+            return handleGithubOAuthRevoke(request, env);
+          case "webhook":
+            return handleGithubWebhook(request, env);
+          case "webhook/recent":
+            if (request.method !== "GET") return jsonResp({ error: "Method not allowed" }, 405);
+            return handleGithubWebhookRecent(request, env);
           default:
             return jsonResp({ error: `Unknown GitHub endpoint: ${sub}` }, 404);
         }
