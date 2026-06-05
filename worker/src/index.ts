@@ -1,17 +1,17 @@
-// ──────────────────────────────────────────────────────────────────────────
-// OpenThink3 Worker — Cloudflare Worker entry point.
+﻿// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// OpenThink3 Worker â€” Cloudflare Worker entry point.
 //
 // Storage layout (all CF-native, no external services):
-//   - MEMORIES (KV)     → thread chat history (via THREAD_DO)
-//   - ARTIFACTS (KV)    → deploy bundles, manifests, sync state
-//   - OPENTHINK3_DB (D1) → gbrain pages, edges, signals, threads, benchmarks
-//   - GBRAIN_PAGES (Vectorize) → 384-dim BGE embeddings for semantic recall
-//   - THREAD_DO (DO)    → per-thread stateful agent + chat streaming
-//   - ORCHESTRATOR_DO   → MCP server for gstack tool calls
+//   - MEMORIES (KV)     â†’ thread chat history (via THREAD_DO)
+//   - ARTIFACTS (KV)    â†’ deploy bundles, manifests, sync state
+//   - OPENTHINK3_DB (D1) â†’ gbrain pages, edges, signals, threads, benchmarks
+//   - GBRAIN_PAGES (Vectorize) â†’ 384-dim BGE embeddings for semantic recall
+//   - THREAD_DO (DO)    â†’ per-thread stateful agent + chat streaming
+//   - ORCHESTRATOR_DO   â†’ MCP server for gstack tool calls
 //
 // Skill routes (gbrain + gstack) live at /api/skill/{search,think,capture,run,evals}
 // and are invoked by the SkillsPanel + ThreadFeed on the frontend.
-// ──────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // TODO: when CF Cron Triggers ship (Phase 3), dispatch all 'cron-daily' hooks
 
 import { Agent } from "agents";
@@ -369,25 +369,45 @@ If you need context or memory, call the check_context tool.`;
   }
 }
 
-// ── Intelligence Stack Helpers ─────────────────────────────────────────────
+// â”€â”€ Intelligence Stack Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-function corsHeaders() {
-  return {
-    "Access-Control-Allow-Origin": "*",
+
+// Build CORS headers that are valid for credentialed cross-origin requests.
+// When the request is credentialed (SPA uses `credentials: "include"` to send
+// the ot_session cookie + Authorization), the spec requires:
+//   - a SPECIFIC origin (echoed from the request, never "*")
+//   - Access-Control-Allow-Credentials: true
+//   - Vary: Origin (to keep caches honest)
+// Cloudflare surfaces a PreflightWildcardOriginNotAllowed error otherwise.
+function corsHeadersFor(request: Request | null) {
+  const origin = request?.headers.get("Origin") || request?.headers.get("origin") || "";
+  const allowOrigin = origin || "*";
+  const headers: Record<string, string> = {
+    "Access-Control-Allow-Origin": allowOrigin,
     "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-CF-Token, X-CF-Account-Id",
+    "Access-Control-Allow-Headers":
+      "Content-Type, Authorization, X-CF-Token, X-CF-Account-Id, X-Requested-With",
+    "Access-Control-Expose-Headers":
+      "Content-Type, X-CF-Ray, X-CF-Account-Id",
   };
+  if (origin) {
+    // Only credentialed echo â€” required when the SPA uses `credentials: "include"`.
+    headers["Access-Control-Allow-Credentials"] = "true";
+    headers["Vary"] = "Origin";
+  }
+  return headers;
 }
 
-function jsonResp(data: any, status = 200) {
+function jsonResp(data: any, status = 200, request: Request | null = null) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { ...corsHeaders(), "Content-Type": "application/json" },
+    headers: { ...corsHeadersFor(request), "Content-Type": "application/json" },
   });
 }
 
 async function proxyToBrain(env: Env, path: string, req: Request): Promise<Response> {
   const vmUrl = env.GBRAIN_VM_URL || "http://localhost:4000";
+  const jsonRespC = (data: any, status = 200) => jsonResp(data, status, req);
   try {
     const upstream = new URL(path, vmUrl);
     const proxied = new Request(upstream.toString(), {
@@ -397,9 +417,9 @@ async function proxyToBrain(env: Env, path: string, req: Request): Promise<Respo
     });
     const r = await fetch(proxied);
     const body = await r.text();
-    return new Response(body, { status: r.status, headers: { ...corsHeaders(), "Content-Type": "application/json" } });
+    return new Response(body, { status: r.status, headers: { ...corsHeadersFor(req), "Content-Type": "application/json" } });
   } catch (err: any) {
-    return jsonResp({ error: "GBrain not reachable", detail: err.message }, 503);
+    return jsonRespC({ error: "GBrain not reachable", detail: err.message }, 503);
   }
 }
 
@@ -419,31 +439,32 @@ async function execOnVM(env: Env, command: string): Promise<{ ok: boolean; outpu
   }
 }
 
-// ── Skill route dispatcher ─────────────────────────────────────────────
+// â”€â”€ Skill route dispatcher â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function handleSkillRoute(env: Env, request: Request, url: URL, ctx: ExecutionContext): Promise<Response> {
   const route = url.pathname.replace(/^\/api\/skill\//, "");
+  const jsonRespC = (data: any, status = 200) => jsonResp(data, status, request);
   if (request.method !== "POST") {
-    return jsonResp({ error: `Method ${request.method} not allowed` }, 405);
+    return jsonRespC({ error: `Method ${request.method} not allowed` }, 405);
   }
 
   switch (route) {
     case "capture": {
       const body = (await request.json().catch(() => ({}))) as Parameters<typeof handleCapture>[1];
       if (!body.threadId || !body.type || !body.content) {
-        return jsonResp({ error: "threadId, type, content are required" }, 400);
+        return jsonRespC({ error: "threadId, type, content are required" }, 400);
       }
       const r = await handleCapture(env, body);
-      return jsonResp(r);
+      return jsonRespC(r);
     }
     case "search": {
       const body = (await request.json().catch(() => ({}))) as Parameters<typeof handleSearch>[1];
-      if (!body.query) return jsonResp({ error: "query is required" }, 400);
+      if (!body.query) return jsonRespC({ error: "query is required" }, 400);
       const r = await handleSearch(env, body);
-      return jsonResp(r);
+      return jsonRespC(r);
     }
     case "think": {
       const body = (await request.json().catch(() => ({}))) as Parameters<typeof handleThink>[1];
-      if (!body.query) return jsonResp({ error: "query is required" }, 400);
+      if (!body.query) return jsonRespC({ error: "query is required" }, 400);
       // Return SSE stream.
       const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
       const writer = writable.getWriter();
@@ -455,32 +476,32 @@ async function handleSkillRoute(env: Env, request: Request, url: URL, ctx: Execu
           "Content-Type": "text/event-stream",
           "Cache-Control": "no-cache",
           Connection: "keep-alive",
-          ...corsHeaders(),
+          ...corsHeadersFor(request),
         },
       });
     }
     case "run": {
       const body = (await request.json().catch(() => ({}))) as Parameters<typeof handleRun>[1];
-      if (!body.command) return jsonResp({ error: "command is required" }, 400);
+      if (!body.command) return jsonRespC({ error: "command is required" }, 400);
       const r = await handleRun(env, body);
-      return jsonResp(r);
+      return jsonRespC(r);
     }
     case "evals": {
       const body = ((await request.json().catch(() => ({}))) ?? {}) as Parameters<typeof handleEvals>[1];
       const r = await handleEvals(env, body);
-      return jsonResp(r);
+      return jsonRespC(r);
     }
     default:
-      return jsonResp({ error: `Unknown skill route: ${route}` }, 404);
+      return jsonRespC({ error: `Unknown skill route: ${route}` }, 404);
   }
 }
 
 // Main Worker routing
 export default {
-  // ── Cron trigger handler ─────────────────────────────────────────────
+  // â”€â”€ Cron trigger handler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Two crons configured in wrangler.toml:
-  //   "0 5 * * *"  → gbrain-dream (nightly memory consolidation)
-  //   "0 6 * * *"  → gbrain-evals (eval suite scorecard)
+  //   "0 5 * * *"  â†’ gbrain-dream (nightly memory consolidation)
+  //   "0 6 * * *"  â†’ gbrain-evals (eval suite scorecard)
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     const cron = controller.cron;
     console.log(`[cron] firing: ${cron}`);
@@ -501,13 +522,17 @@ export default {
 
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+    // Local wrapper that always includes the request in CORS headers so
+    // credentialed responses (SPA uses `credentials: "include"`) get a
+    // specific echoed origin + Allow-Credentials: true, not `*`.
+    const jsonRespC = (data: any, status = 200) => jsonResp(data, status, request);
 
     // CORS Preflight
     if (request.method === "OPTIONS") {
-      return new Response(null, { headers: corsHeaders() });
+      return new Response(null, { headers: corsHeadersFor(request) });
     }
 
-    // ── OAuth (worker-side) — gates the deployed agent on custom domains ──
+    // â”€â”€ OAuth (worker-side) â€” gates the deployed agent on custom domains â”€â”€
     if (url.pathname === "/auth/login" && request.method === "GET") {
       return handleAuthLogin(request, env);
     }
@@ -522,8 +547,8 @@ export default {
       return handleAuthStatus(request, env);
     }
 
-    // ── Auth gate: block /api/* when host is a custom domain ──────────────
-    // Skip the /api/cf/proxy/* paths — they authenticate the user via their
+    // â”€â”€ Auth gate: block /api/* when host is a custom domain â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // Skip the /api/cf/proxy/* paths â€” they authenticate the user via their
     // own Bearer token (the OAuth access token from the SPA's localStorage),
     // not the worker's session cookie.
     if (url.pathname.startsWith("/api/") && !url.pathname.startsWith("/api/cf/proxy/")) {
@@ -531,80 +556,80 @@ export default {
       if (denied) return denied;
     }
 
-    // ── GitHub App installation flow (/api/github/*) ──────────────
+    // â”€â”€ GitHub App installation flow (/api/github/*) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (url.pathname.startsWith("/api/github/")) {
       if (request.method === "OPTIONS") {
-        return new Response(null, { headers: corsHeaders() });
+        return new Response(null, { headers: corsHeadersFor(request) });
       }
       try {
         const sub = url.pathname.replace(/^\/api\/github\//, "");
         switch (sub) {
           case "install":
-            if (request.method !== "GET") return jsonResp({ error: "Method not allowed" }, 405);
+            if (request.method !== "GET") return jsonRespC({ error: "Method not allowed" }, 405);
             return handleGithubInstall(request, env);
           case "callback":
             return handleGithubCallback(request, env);
           case "repos":
-            if (request.method !== "GET") return jsonResp({ error: "Method not allowed" }, 405);
+            if (request.method !== "GET") return jsonRespC({ error: "Method not allowed" }, 405);
             return handleGithubRepos(request, env);
           case "status":
-            if (request.method !== "GET") return jsonResp({ error: "Method not allowed" }, 405);
+            if (request.method !== "GET") return jsonRespC({ error: "Method not allowed" }, 405);
             return handleGithubStatus(request, env);
           case "prs":
-            if (request.method !== "POST") return jsonResp({ error: "Method not allowed" }, 405);
+            if (request.method !== "POST") return jsonRespC({ error: "Method not allowed" }, 405);
             return handleGithubPR(request, env);
           case "issues":
-            if (request.method !== "POST") return jsonResp({ error: "Method not allowed" }, 405);
+            if (request.method !== "POST") return jsonRespC({ error: "Method not allowed" }, 405);
             return handleGithubIssue(request, env);
           case "device/code":
-            if (request.method !== "POST") return jsonResp({ error: "Method not allowed" }, 405);
+            if (request.method !== "POST") return jsonRespC({ error: "Method not allowed" }, 405);
             return handleGithubDeviceCode(request, env);
           case "device/token":
-            if (request.method !== "POST") return jsonResp({ error: "Method not allowed" }, 405);
+            if (request.method !== "POST") return jsonRespC({ error: "Method not allowed" }, 405);
             return handleGithubDeviceToken(request, env);
           case "device/cancel":
-            if (request.method !== "POST") return jsonResp({ error: "Method not allowed" }, 405);
+            if (request.method !== "POST") return jsonRespC({ error: "Method not allowed" }, 405);
             return handleGithubDeviceCancel(request, env);
           case "oauth/token":
-            if (request.method !== "POST") return jsonResp({ error: "Method not allowed" }, 405);
+            if (request.method !== "POST") return jsonRespC({ error: "Method not allowed" }, 405);
             return handleGithubOAuthToken(request, env);
           case "oauth/status":
-            if (request.method !== "GET") return jsonResp({ error: "Method not allowed" }, 405);
+            if (request.method !== "GET") return jsonRespC({ error: "Method not allowed" }, 405);
             return handleGithubOAuthStatus(request, env);
           case "oauth/revoke":
-            if (request.method !== "POST") return jsonResp({ error: "Method not allowed" }, 405);
+            if (request.method !== "POST") return jsonRespC({ error: "Method not allowed" }, 405);
             return handleGithubOAuthRevoke(request, env);
           case "webhook":
             return handleGithubWebhook(request, env);
           case "webhook/recent":
-            if (request.method !== "GET") return jsonResp({ error: "Method not allowed" }, 405);
+            if (request.method !== "GET") return jsonRespC({ error: "Method not allowed" }, 405);
             return handleGithubWebhookRecent(request, env);
           default:
-            return jsonResp({ error: `Unknown GitHub endpoint: ${sub}` }, 404);
+            return jsonRespC({ error: `Unknown GitHub endpoint: ${sub}` }, 404);
         }
       } catch (err: any) {
-        return jsonResp({ error: err?.message ?? String(err) }, 500);
+        return jsonRespC({ error: err?.message ?? String(err) }, 500);
       }
     }
 
-    // ── Local Agent Bridge (/api/bridge/*) ──────────────────────
+    // â”€â”€ Local Agent Bridge (/api/bridge/*) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (url.pathname.startsWith("/api/bridge")) {
       try {
         return await handleBridge(env, request, url, ctx);
       } catch (err: any) {
-        return jsonResp({ error: err?.message ?? String(err) }, 500);
+        return jsonRespC({ error: err?.message ?? String(err) }, 500);
       }
     }
 
-    // ── Brain API (/api/brain/*) ────────────────────────────────
+    // â”€â”€ Brain API (/api/brain/*) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (url.pathname.startsWith("/api/brain/")) {
       const subpath = url.pathname.replace("/api/brain", "");
 
-      // GET /api/brain/status → probe gbrain HTTP server
+      // GET /api/brain/status â†’ probe gbrain HTTP server
       if (subpath === "/status" && request.method === "GET") {
         const r = await proxyToBrain(env, "/status", request);
         if (r.status === 503) {
-          return jsonResp({ connected: false, pageCount: 0, entityCount: 0, engine: "unknown", version: "" });
+          return jsonRespC({ connected: false, pageCount: 0, entityCount: 0, engine: "unknown", version: "" });
         }
         return r;
       }
@@ -619,27 +644,27 @@ export default {
         return proxyToBrain(env, "/ingest", request);
       }
 
-      return jsonResp({ error: "Unknown brain endpoint" }, 404);
+      return jsonRespC({ error: "Unknown brain endpoint" }, 404);
     }
 
-    // ── Eval API (/api/eval/*) ──────────────────────────────────
+    // â”€â”€ Eval API (/api/eval/*) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (url.pathname.startsWith("/api/eval/")) {
       const subpath = url.pathname.replace("/api/eval", "");
 
-      // GET /api/eval/results → fetch from KV
+      // GET /api/eval/results â†’ fetch from KV
       if (subpath === "/results" && request.method === "GET") {
         const cached = await env.MEMORIES.get("eval:latest", { type: "json" });
-        if (cached) return jsonResp(cached);
-        return jsonResp({ error: "No eval results yet. Run an evaluation first." }, 404);
+        if (cached) return jsonRespC(cached);
+        return jsonRespC({ error: "No eval results yet. Run an evaluation first." }, 404);
       }
 
       // GET /api/eval/history
       if (subpath === "/history" && request.method === "GET") {
         const history = await env.MEMORIES.get("eval:history", { type: "json" });
-        return jsonResp(history || []);
+        return jsonRespC(history || []);
       }
 
-      // POST /api/eval/run → SSE stream of eval run via exe.dev
+      // POST /api/eval/run â†’ SSE stream of eval run via exe.dev
       if (subpath === "/run" && request.method === "POST") {
         const { readable, writable } = new TransformStream();
         const writer = writable.getWriter();
@@ -651,14 +676,14 @@ export default {
 
         ctx.waitUntil((async () => {
           try {
-            await sendEvent({ log: "🚀 Connecting to eval runner on exe.dev VM..." });
+            await sendEvent({ log: "ðŸš€ Connecting to eval runner on exe.dev VM..." });
 
             const cmd = "cd ~/gbrain-evals && bun run eval:run --json 2>&1";
             const { ok, output } = await execOnVM(env, cmd);
 
             if (!ok) {
-              await sendEvent({ log: `⚠️ VM exec failed: ${output}` });
-              await sendEvent({ log: "💡 Tip: Set EXE_DEV_TOKEN secret and deploy gbrain-evals to your VM" });
+              await sendEvent({ log: `âš ï¸ VM exec failed: ${output}` });
+              await sendEvent({ log: "ðŸ’¡ Tip: Set EXE_DEV_TOKEN secret and deploy gbrain-evals to your VM" });
             } else {
               // Parse scorecard from output
               const lines = output.split("\n");
@@ -677,52 +702,52 @@ export default {
                   history.unshift({ ...scorecard, timestamp: new Date().toISOString() });
                   if (history.length > 30) history.pop();
                   await env.MEMORIES.put("eval:history", JSON.stringify(history));
-                  await sendEvent({ log: "✅ Scorecard saved to KV!", scorecard });
+                  await sendEvent({ log: "âœ… Scorecard saved to KV!", scorecard });
                 } catch {}
               }
             }
             await sendEvent({ done: true });
           } catch (err: any) {
-            await sendEvent({ log: `❌ Error: ${err.message}`, done: true });
+            await sendEvent({ log: `âŒ Error: ${err.message}`, done: true });
           } finally {
             await writer.close();
           }
         })());
 
         return new Response(readable, {
-          headers: { ...corsHeaders(), "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "Connection": "keep-alive" },
+          headers: { ...corsHeadersFor(request), "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "Connection": "keep-alive" },
         });
       }
 
-      return jsonResp({ error: "Unknown eval endpoint" }, 404);
+      return jsonRespC({ error: "Unknown eval endpoint" }, 404);
     }
 
-    // ── exe.dev exec proxy (/api/exec) ──────────────────────────
+    // â”€â”€ exe.dev exec proxy (/api/exec) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (url.pathname === "/api/exec" && request.method === "POST") {
       const body = await request.text();
       const { ok, output } = await execOnVM(env, body);
-      return jsonResp({ ok, output });
+      return jsonRespC({ ok, output });
     }
 
     if (url.pathname === "/api/exec/vms" && request.method === "GET") {
       const token = env.EXE_DEV_TOKEN;
-      if (!token) return jsonResp({ error: "EXE_DEV_TOKEN not configured" }, 503);
+      if (!token) return jsonRespC({ error: "EXE_DEV_TOKEN not configured" }, 503);
       try {
         const r = await fetch("https://exe.dev/exec", {
           method: "POST",
           headers: { Authorization: `Bearer ${token}`, "Content-Type": "text/plain" },
           body: "ls --json",
         });
-        return new Response(await r.text(), { headers: { ...corsHeaders(), "Content-Type": "application/json" } });
+        return new Response(await r.text(), { headers: { ...corsHeadersFor(request), "Content-Type": "application/json" } });
       } catch (err: any) {
-        return jsonResp({ error: err.message }, 503);
+        return jsonRespC({ error: err.message }, 503);
       }
     }
 
-    // ── Plugin registry (/api/plugins/*) ───────────────────────
+    // â”€â”€ Plugin registry (/api/plugins/*) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (url.pathname === "/api/plugins" && request.method === "GET") {
       const registry = await env.MEMORIES.get("plugins:registry", { type: "json" });
-      return jsonResp(registry || []);
+      return jsonRespC(registry || []);
     }
 
     if (url.pathname === "/api/plugins" && request.method === "POST") {
@@ -731,19 +756,19 @@ export default {
         // Fetch community plugin manifest
         try {
           const r = await fetch(body.url);
-          if (!r.ok) return jsonResp({ error: "Failed to fetch plugin manifest" }, 400);
+          if (!r.ok) return jsonRespC({ error: "Failed to fetch plugin manifest" }, 400);
           const manifest = await r.json() as any;
           // Validate minimal schema
-          if (!manifest.id || !manifest.name) return jsonResp({ error: "Invalid plugin manifest" }, 400);
+          if (!manifest.id || !manifest.name) return jsonRespC({ error: "Invalid plugin manifest" }, 400);
           const registry = (await env.MEMORIES.get("plugins:registry", { type: "json" })) as any[] || [];
           registry.push({ ...manifest, source: "community", installedAt: new Date().toISOString() });
           await env.MEMORIES.put("plugins:registry", JSON.stringify(registry));
-          return jsonResp(manifest);
+          return jsonRespC(manifest);
         } catch (err: any) {
-          return jsonResp({ error: err.message }, 500);
+          return jsonRespC({ error: err.message }, 500);
         }
       }
-      return jsonResp({ error: "Provide url or plugin" }, 400);
+      return jsonRespC({ error: "Provide url or plugin" }, 400);
     }
 
     if (url.pathname.startsWith("/api/plugins/") && request.method === "PUT") {
@@ -757,40 +782,40 @@ export default {
         registry.push({ ...body, id: pluginId });
       }
       await env.MEMORIES.put("plugins:registry", JSON.stringify(registry));
-      return jsonResp({ ok: true });
+      return jsonRespC({ ok: true });
     }
 
-    // ── Cloudflare artifact sync (/api/cf/*) ────────────────────
+    // â”€â”€ Cloudflare artifact sync (/api/cf/*) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (url.pathname.startsWith("/api/cf")) {
       if (request.method === "OPTIONS") {
-        return new Response(null, { headers: corsHeaders() });
+        return new Response(null, { headers: corsHeadersFor(request) });
       }
       try {
         return await handleCf(env, request);
       } catch (err: any) {
         // CfHttpError carries an explicit status (4xx); anything else is 500.
         const status = err?.name === "CfHttpError" ? (err.status as number) : 500;
-        return jsonResp({ error: err?.message ?? String(err) }, status);
+        return jsonRespC({ error: err?.message ?? String(err) }, status);
       }
     }
 
-    // ── Skill routes (gbrain + gstack) (/api/skill/*) ───────────
+    // â”€â”€ Skill routes (gbrain + gstack) (/api/skill/*) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (url.pathname.startsWith("/api/skill/")) {
       if (request.method === "OPTIONS") {
-        return new Response(null, { headers: corsHeaders() });
+        return new Response(null, { headers: corsHeadersFor(request) });
       }
       try {
         return await handleSkillRoute(env, request, url, ctx);
       } catch (err: any) {
-        return jsonResp({ error: err?.message ?? String(err) }, 500);
+        return jsonRespC({ error: err?.message ?? String(err) }, 500);
       }
     }
 
-    // ── Benchmarks store (/api/benchmarks, /api/benchmarks/run) ──
+    // â”€â”€ Benchmarks store (/api/benchmarks, /api/benchmarks/run) â”€â”€
     const benchRes = await handleBenchmarksRoute(env, request, url, ctx);
     if (benchRes) return benchRes;
 
-    // ── Thread routing (existing) ───────────────────────────────
+    // â”€â”€ Thread routing (existing) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // gbrain history (capture) is at /api/skill/capture and stores to
     // D1+Vectorize. The legacy /api/thread/:id/history endpoint is still
     // served by THREAD_DO (MEMORIES KV) for the chat streaming UI.
@@ -827,19 +852,19 @@ export default {
   },
 };
 
-// ═══════════════════════════════════════════════════════════════════════
-// Cloudflare artifact sync — store worker bundles, manifests, deploy history
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// Cloudflare artifact sync â€” store worker bundles, manifests, deploy history
 // in the ARTIFACTS KV namespace and proxy deploy/PR calls to the real
 // Cloudflare REST API + GitHub API using server-side secrets.
-// ═══════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 // KV key conventions (all in env.ARTIFACTS):
-//   manifest              — current deployed manifest JSON
-//   worker:current       — current worker bundle (string, up to 25 MB)
-//   worker:staged        — staged worker bundle waiting for deploy
-//   pages:current        — { url, deployedAt } for the latest Pages deploy
-//   history:list         — JSON array of { id, ts, actor, type, ok, summary }
-//   history:{id}         — full deploy record JSON
+//   manifest              â€” current deployed manifest JSON
+//   worker:current       â€” current worker bundle (string, up to 25 MB)
+//   worker:staged        â€” staged worker bundle waiting for deploy
+//   pages:current        â€” { url, deployedAt } for the latest Pages deploy
+//   history:list         â€” JSON array of { id, ts, actor, type, ok, summary }
+//   history:{id}         â€” full deploy record JSON
 
 type HistoryEntry = {
   id: string;
@@ -973,7 +998,7 @@ async function ghFetch(env: Env, path: string, init: RequestInit = {}): Promise<
   return r.json();
 }
 
-// ── App-based GH client (uses the GitHub App installation token, not a PAT) ─
+// â”€â”€ App-based GH client (uses the GitHub App installation token, not a PAT) â”€
 // The user installs open-think-auth on NeoFlux-Holdings once. The installation
 // token (encrypted with GITHUB_INSTALL_TOKEN_KEY) is stored at
 // `gh:install:token:<cfAccountId>` in ARTIFACTS. This helper reads the
@@ -1087,7 +1112,7 @@ async function ghAppApi(env: Env, request: Request, path: string, init: RequestI
   return body;
 }
 
-// ── Direct Upload helper: push a set of files to a Pages project ──────
+// â”€â”€ Direct Upload helper: push a set of files to a Pages project â”€â”€â”€â”€â”€â”€
 async function directUploadToPages(
   env: Env,
   request: Request,
@@ -1131,7 +1156,7 @@ async function directUploadToPages(
   return { deploymentId, fileCount: normalized.length, totalBytes: normalized.reduce((s, f) => s + f.bytes.byteLength, 0) };
 }
 
-// ── Helper: stream the latest build out of R2 as a list of {path, content} ──
+// â”€â”€ Helper: stream the latest build out of R2 as a list of {path, content} â”€â”€
 async function readLatestBuildFromR2(env: Env): Promise<Array<{ path: string; content: ArrayBuffer }>> {
   if (!env.AGENT_BUILDS) throw new Error("AGENT_BUILDS R2 bucket not configured");
   const list = await env.AGENT_BUILDS.list({ prefix: "builds/latest/" });
@@ -1155,20 +1180,24 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
   const url = new URL(request.url);
   const subpath = url.pathname.replace(/^\/api\/cf/, "");
   const method = request.method;
+  // Local wrapper that always includes the request in CORS headers so
+  // credentialed responses (SPA uses `credentials: "include"`) get a
+  // specific echoed origin + Allow-Credentials: true, not `*`.
+  const jsonRespC = (data: any, status = 200) => jsonResp(data, status, request);
 
-  // ── /api/cf/agent/publish-build — upload a build (multipart) to R2
+  // â”€â”€ /api/cf/agent/publish-build â€” upload a build (multipart) to R2
   // Form fields: "files" (one or more file blobs). The relative file name
   // is preserved (e.g. dist/index.html -> builds/latest/index.html).
   // Overwrites builds/latest/* atomically.
   if (subpath === "/agent/publish-build" && method === "POST") {
-    if (!env.AGENT_BUILDS) return jsonResp({ error: "AGENT_BUILDS R2 bucket not configured" }, 503);
+    if (!env.AGENT_BUILDS) return jsonRespC({ error: "AGENT_BUILDS R2 bucket not configured" }, 503);
     let formData: FormData;
     try { formData = await request.formData(); } catch {
-      return jsonResp({ error: "Expected multipart/form-data with 'files' field" }, 400);
+      return jsonRespC({ error: "Expected multipart/form-data with 'files' field" }, 400);
     }
     const files = formData.getAll("files") as unknown as File[];
     if (!files || files.length === 0) {
-      return jsonResp({ error: "No files uploaded. Send multipart/form-data with 'files' field." }, 400);
+      return jsonRespC({ error: "No files uploaded. Send multipart/form-data with 'files' field." }, 400);
     }
     const uploaded: Array<{ path: string; size: number }> = [];
     for (const file of files) {
@@ -1190,12 +1219,12 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
     await env.AGENT_BUILDS.put("builds/latest/_manifest.json", JSON.stringify(manifest, null, 2), {
       httpMetadata: { contentType: "application/json" },
     });
-    return jsonResp({ ok: true, ...manifest });
+    return jsonRespC({ ok: true, ...manifest });
   }
 
-  // ── /api/cf/agent/build/list — list files in builds/latest/
+  // â”€â”€ /api/cf/agent/build/list â€” list files in builds/latest/
   if (subpath === "/agent/build/list" && method === "GET") {
-    if (!env.AGENT_BUILDS) return jsonResp({ error: "AGENT_BUILDS R2 bucket not configured" }, 503);
+    if (!env.AGENT_BUILDS) return jsonRespC({ error: "AGENT_BUILDS R2 bucket not configured" }, 503);
     const list = await env.AGENT_BUILDS.list({ prefix: "builds/latest/" });
     const files = list.objects
       .filter((o) => !o.key.endsWith("/_manifest.json"))
@@ -1205,13 +1234,13 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
     if (m) {
       try { manifest = JSON.parse(await m.text()); } catch { /* ignore */ }
     }
-    return jsonResp({ files, manifest });
+    return jsonRespC({ files, manifest });
   }
 
-  // ── /api/cf/status — diagnostic (what's configured, what's not)
+  // â”€â”€ /api/cf/status â€” diagnostic (what's configured, what's not)
   if (subpath === "/status" && method === "GET") {
     const { source } = resolveCfCreds(env, request);
-    return jsonResp({
+    return jsonRespC({
       ok: true,
       configured: {
         CF_API_TOKEN: !!env.CF_API_TOKEN,
@@ -1225,7 +1254,7 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
     });
   }
 
-  // ── /api/cf/proxy/{userinfo,accounts} — CORS-free proxy for the SPA.
+  // â”€â”€ /api/cf/proxy/{userinfo,accounts} â€” CORS-free proxy for the SPA.
   // CF's userinfo + /accounts endpoints don't return Access-Control-Allow-Origin,
   // so a browser-based SPA can't read them directly. We proxy server-side and
   // re-emit CORS so the SPA can read the body. The SPA's Bearer token is the
@@ -1234,7 +1263,7 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
     const tail = subpath.replace(/^\/proxy\//, "");
     const auth = request.headers.get("Authorization") || "";
     const m = auth.match(/^Bearer\s+(.+)$/i);
-    if (!m) return jsonResp({ error: "Missing Authorization: Bearer <token>" }, 401);
+    if (!m) return jsonRespC({ error: "Missing Authorization: Bearer <token>" }, 401);
     const token = m[1];
     let upstreamUrl: string;
     switch (tail) {
@@ -1245,7 +1274,7 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
         upstreamUrl = "https://api.cloudflare.com/client/v4/accounts?per_page=1";
         break;
       default:
-        return jsonResp({ error: `Unknown proxy path: ${tail}` }, 404);
+        return jsonRespC({ error: `Unknown proxy path: ${tail}` }, 404);
     }
     try {
       const r = await fetch(upstreamUrl, {
@@ -1255,32 +1284,32 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
       return new Response(body, {
         status: r.status,
         headers: {
-          ...corsHeaders(),
+          ...corsHeadersFor(request),
           "Content-Type": r.headers.get("Content-Type") || "application/json",
         },
       });
     } catch (err: any) {
-      return jsonResp({ error: `proxy failed: ${err?.message ?? String(err)}` }, 502);
+      return jsonRespC({ error: `proxy failed: ${err?.message ?? String(err)}` }, 502);
     }
   }
 
-  // ── /api/cf/resolve-account — discover account/zones for a per-request token
+  // â”€â”€ /api/cf/resolve-account â€” discover account/zones for a per-request token
   if (subpath === "/resolve-account" && method === "POST") {
     const body = await request.json().catch(() => ({})) as { token?: string };
     const token = body?.token;
     if (!token || typeof token !== "string") {
-      return jsonResp({ error: "Body must include { token: string }" }, 400);
+      return jsonRespC({ error: "Body must include { token: string }" }, 400);
     }
     const cfHeaders = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
     try {
       const accountsRes: any = await fetch("https://api.cloudflare.com/client/v4/accounts?per_page=50", { headers: cfHeaders }).then(r => r.json());
       if (!accountsRes.success) {
         const msg = (accountsRes.errors || []).map((e: any) => e.message).join("; ") || "Failed to list accounts";
-        return jsonResp({ error: msg }, 502);
+        return jsonRespC({ error: msg }, 502);
       }
       const account = (accountsRes.result || [])[0];
       if (!account) {
-        return jsonResp({ error: "No accounts found for this token" }, 404);
+        return jsonRespC({ error: "No accounts found for this token" }, 404);
       }
       const accountId: string = account.id;
       const probe = async (url: string): Promise<any> => {
@@ -1299,7 +1328,7 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
       const zones = (zonesRes.result || []).map((z: any) => ({
         id: z.id, name: z.name, status: z.status,
       }));
-      return jsonResp({
+      return jsonRespC({
         ok: true,
         accountId,
         accountName: account.name,
@@ -1309,23 +1338,23 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
         zones,
       });
     } catch (err: any) {
-      return jsonResp({ error: err?.message ?? String(err) }, 500);
+      return jsonRespC({ error: err?.message ?? String(err) }, 500);
     }
   }
 
-  // ── /api/cf/zones — list user's Cloudflare zones (live)
+  // â”€â”€ /api/cf/zones â€” list user's Cloudflare zones (live)
   if (subpath === "/zones" && method === "GET") {
     const data = await cfFetch(env, request, "/zones?per_page=50");
     const zones = (data.result || []).map((z: any) => ({
       id: z.id, name: z.name, status: z.status,
     }));
-    return jsonResp({ zones, source: "live" });
+    return jsonRespC({ zones, source: "live" });
   }
 
-  // ── /api/cf/workers — list existing worker scripts
+  // â”€â”€ /api/cf/workers â€” list existing worker scripts
   if (subpath === "/workers" && method === "GET") {
     const { accountId } = resolveCfCreds(env, request);
-    if (!accountId) return jsonResp({ error: "CF account ID required. Provide X-CF-Account-Id header or set CF_ACCOUNT_ID env var." }, 400);
+    if (!accountId) return jsonRespC({ error: "CF account ID required. Provide X-CF-Account-Id header or set CF_ACCOUNT_ID env var." }, 400);
     const data = await cfFetch(env, request, `/accounts/${accountId}/workers/scripts`);
     const workers = (data.result || []).map((w: any) => ({
       id: w.id, created_on: w.created_on, modified_on: w.modified_on,
@@ -1337,31 +1366,31 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
         return { ...w, etag: d.result?.etag, handlers: d.result?.handlers?.length ?? 0, size: d.result?.size };
       } catch { return w; }
     }));
-    return jsonResp({ workers: enriched, source: "live" });
+    return jsonRespC({ workers: enriched, source: "live" });
   }
 
-  // ── /api/cf/manifest — current deployed manifest
+  // â”€â”€ /api/cf/manifest â€” current deployed manifest
   if (subpath === "/manifest" && method === "GET") {
     const manifest = await loadManifest(env);
     const staged = !!(await env.ARTIFACTS.get("worker:staged"));
-    return jsonResp({ manifest, staged });
+    return jsonRespC({ manifest, staged });
   }
 
-  // ── /api/cf/bundle/worker — GET current, POST/PUT to stage
+  // â”€â”€ /api/cf/bundle/worker â€” GET current, POST/PUT to stage
   if (subpath === "/bundle/worker" && method === "GET") {
     const code = await env.ARTIFACTS.get("worker:current");
-    if (!code) return jsonResp({ error: "No worker bundle stored yet" }, 404);
+    if (!code) return jsonRespC({ error: "No worker bundle stored yet" }, 404);
     return new Response(code, {
-      headers: { ...corsHeaders(), "Content-Type": "application/javascript" },
+      headers: { ...corsHeadersFor(request), "Content-Type": "application/javascript" },
     });
   }
   if (subpath === "/bundle/worker" && (method === "POST" || method === "PUT")) {
     const body = await request.json() as { code?: string; meta?: { sha256?: string; bytes?: number; source?: string } };
     if (!body.code || typeof body.code !== "string") {
-      return jsonResp({ error: "Body must include { code: string }" }, 400);
+      return jsonRespC({ error: "Body must include { code: string }" }, 400);
     }
     if (body.code.length > 25 * 1024 * 1024) {
-      return jsonResp({ error: "Bundle exceeds KV 25 MB value limit" }, 413);
+      return jsonRespC({ error: "Bundle exceeds KV 25 MB value limit" }, 413);
     }
     const meta = body.meta || {};
     const stagedMeta = {
@@ -1379,12 +1408,12 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
       actor: meta.source ?? "user",
       type: "stage",
       ok: true,
-      summary: `Staged worker bundle (${(stagedMeta.bytes / 1024).toFixed(1)} KB${meta.sha256 ? `, sha ${meta.sha256.slice(0, 10)}…` : ""})`,
+      summary: `Staged worker bundle (${(stagedMeta.bytes / 1024).toFixed(1)} KB${meta.sha256 ? `, sha ${meta.sha256.slice(0, 10)}â€¦` : ""})`,
     });
-    return jsonResp({ ok: true, staged: stagedMeta });
+    return jsonRespC({ ok: true, staged: stagedMeta });
   }
 
-  // ── /api/cf/deploy/worker — push staged bundle to Cloudflare via REST API
+  // â”€â”€ /api/cf/deploy/worker â€” push staged bundle to Cloudflare via REST API
   if (subpath === "/deploy/worker" && method === "POST") {
     const body = await request.json().catch(() => ({})) as { scriptName?: string; message?: string };
     // Prefer staged; fall back to current.
@@ -1399,10 +1428,10 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
       }
     }
     if (!deployCode) {
-      return jsonResp({ error: "No bundle to deploy. POST one to /api/cf/bundle/worker first." }, 400);
+      return jsonRespC({ error: "No bundle to deploy. POST one to /api/cf/bundle/worker first." }, 400);
     }
     const { accountId } = resolveCfCreds(env, request);
-    if (!accountId) return jsonResp({ error: "CF account ID required. Provide X-CF-Account-Id header or set CF_ACCOUNT_ID env var." }, 400);
+    if (!accountId) return jsonRespC({ error: "CF account ID required. Provide X-CF-Account-Id header or set CF_ACCOUNT_ID env var." }, 400);
     const scriptName = body.scriptName || "openthink3-worker";
     const putData = await cfFetch(env, request, `/accounts/${accountId}/workers/scripts/${scriptName}`, {
       method: "PUT",
@@ -1419,7 +1448,7 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
       message: body.message ?? null,
       deploymentId: putData.result?.id ?? null,
     };
-    // Promote staged → current, delete staged, write manifest, append history — all independent writes
+    // Promote staged â†’ current, delete staged, write manifest, append history â€” all independent writes
     await Promise.all([
       env.ARTIFACTS.put("worker:current", deployCode, { metadata: deployMeta }),
       env.ARTIFACTS.delete("worker:staged"),
@@ -1434,16 +1463,16 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
         details: { scriptName, deploymentId: manifest.deploymentId, sha: manifest.sha256, message: body.message ?? null },
       }),
     ]);
-    return jsonResp({ ok: true, manifest });
+    return jsonRespC({ ok: true, manifest });
   }
 
-  // ── /api/cf/deploy/pages — record a Pages deployment intent
+  // â”€â”€ /api/cf/deploy/pages â€” record a Pages deployment intent
   if (subpath === "/deploy/pages" && method === "POST") {
     const body = await request.json().catch(() => ({})) as { projectName?: string; branch?: string };
-    if (!body.projectName) return jsonResp({ error: "projectName required" }, 400);
+    if (!body.projectName) return jsonRespC({ error: "projectName required" }, 400);
     const branch = body.branch || "main";
     const { accountId } = resolveCfCreds(env, request);
-    if (!accountId) return jsonResp({ error: "CF account ID required. Provide X-CF-Account-Id header or set CF_ACCOUNT_ID env var." }, 400);
+    if (!accountId) return jsonRespC({ error: "CF account ID required. Provide X-CF-Account-Id header or set CF_ACCOUNT_ID env var." }, 400);
     const list = await cfFetch(env, request, `/accounts/${accountId}/pages/projects/${body.projectName}/deployments?per_page=1`);
     await appendHistory(env, {
       id: `pages-${Date.now()}`,
@@ -1454,7 +1483,7 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
       summary: `Tracked Pages deploy for ${body.projectName}@${branch}`,
       details: { projectName: body.projectName, branch, latestDeploymentId: list.result?.[0]?.id ?? null },
     });
-    return jsonResp({
+    return jsonRespC({
       ok: true,
       projectName: body.projectName,
       branch,
@@ -1463,20 +1492,20 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
     });
   }
 
-  // ── /api/cf/pages/attach-domain — attach a custom domain to a Pages project
+  // â”€â”€ /api/cf/pages/attach-domain â€” attach a custom domain to a Pages project
   // Body: { domain: "subdomain.example.com", projectName?: "openthink-harness" }
   // Returns: { ok, url, status, result, source }
   if (subpath === "/pages/attach-domain" && method === "POST") {
     const body = await request.json().catch(() => ({})) as { domain?: string; projectName?: string };
     if (!body.domain || typeof body.domain !== "string") {
-      return jsonResp({ error: "domain (string) is required in body" }, 400);
+      return jsonRespC({ error: "domain (string) is required in body" }, 400);
     }
     const projectName = body.projectName || "openthink-harness";
     let cfData: any;
     try {
       const accountId = resolveCfCreds(env, request).accountId;
       if (!accountId) {
-        return jsonResp({ error: "CF account ID required. Set CF_ACCOUNT_ID env var or pass X-CF-Account-Id header." }, 400);
+        return jsonRespC({ error: "CF account ID required. Set CF_ACCOUNT_ID env var or pass X-CF-Account-Id header." }, 400);
       }
       cfData = await cfFetch(env, request, `/accounts/${accountId}/pages/projects/${projectName}/domains`, {
         method: "POST",
@@ -1485,10 +1514,10 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
     } catch (err: any) {
       // cfFetch throws on !success; extract a useful message.
       const msg = String(err?.message ?? err);
-      return jsonResp({ error: `Cloudflare rejected the domain attach: ${msg}` }, 502);
+      return jsonRespC({ error: `Cloudflare rejected the domain attach: ${msg}` }, 502);
     }
     const result = cfData.result ?? {};
-    return jsonResp({
+    return jsonRespC({
       ok: true,
       url: `https://${body.domain}`,
       status: result.status ?? "pending",
@@ -1502,7 +1531,7 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
     });
   }
 
-  // ── /api/cf/deploy/agent — per-agent monorepo provisioning ─────────
+  // â”€â”€ /api/cf/deploy/agent â€” per-agent monorepo provisioning â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Body: { agentName: string, customDomain: string }
   // For each new agent:
   //   1. Create a branch `agent/<name>` in the monorepo (env.GH_REPO)
@@ -1514,25 +1543,25 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
   if (subpath === "/deploy/agent" && method === "POST") {
     const body = await request.json().catch(() => ({})) as { agentName?: string; customDomain?: string };
     if (!body.agentName || typeof body.agentName !== "string") {
-      return jsonResp({ error: "agentName (string) is required" }, 400);
+      return jsonRespC({ error: "agentName (string) is required" }, 400);
     }
     if (!body.customDomain || typeof body.customDomain !== "string") {
-      return jsonResp({ error: "customDomain (string) is required" }, 400);
+      return jsonRespC({ error: "customDomain (string) is required" }, 400);
     }
     const { accountId } = resolveCfCreds(env, request);
     if (!accountId) {
-      return jsonResp({ error: "CF account ID required. Set CF_ACCOUNT_ID env var or pass X-CF-Account-Id header." }, 400);
+      return jsonRespC({ error: "CF account ID required. Set CF_ACCOUNT_ID env var or pass X-CF-Account-Id header." }, 400);
     }
-    if (!env.GH_REPO) return jsonResp({ error: "GH_REPO var is not configured" }, 503);
+    if (!env.GH_REPO) return jsonRespC({ error: "GH_REPO var is not configured" }, 503);
     const sanitized = body.agentName.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
     if (!sanitized) {
-      return jsonResp({ error: "agentName produced an empty branch name (use letters, numbers, or hyphens)" }, 400);
+      return jsonRespC({ error: "agentName produced an empty branch name (use letters, numbers, or hyphens)" }, 400);
     }
     const branch = `agent/${sanitized}`;
     const projectName = `agent-${sanitized}`;
     const existing = await env.ARTIFACTS.get(`agent:${sanitized}`, { type: "json" });
     if (existing) {
-      return jsonResp({ error: `Agent '${sanitized}' already exists`, agent: existing }, 409);
+      return jsonRespC({ error: `Agent '${sanitized}' already exists`, agent: existing }, 409);
     }
     const [ghOwner, ghRepo] = env.GH_REPO.split("/");
     const agent: AgentRecord = {
@@ -1578,7 +1607,7 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
       pushHistory("branch-create", false, `Failed to create branch: ${err?.message ?? err}`);
       agent.status = "error";
       await env.ARTIFACTS.put(`agent:${sanitized}`, JSON.stringify(agent));
-      return jsonResp({ error: `Failed to create branch: ${err?.message ?? err}` }, 502);
+      return jsonRespC({ error: `Failed to create branch: ${err?.message ?? err}` }, 502);
     }
 
     // Step 2: commit agent-data/config.json to the branch.
@@ -1603,10 +1632,10 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
       pushHistory("config-commit", false, `Failed to commit config: ${err?.message ?? err}`);
       agent.status = "error";
       await env.ARTIFACTS.put(`agent:${sanitized}`, JSON.stringify(agent));
-      return jsonResp({ error: `Branch created, config commit failed: ${err?.message ?? err}` }, 502);
+      return jsonRespC({ error: `Branch created, config commit failed: ${err?.message ?? err}` }, 502);
     }
 
-    // Step 3: create the Pages project (Direct Upload only — no Git connection).
+    // Step 3: create the Pages project (Direct Upload only â€” no Git connection).
     // We upload the build from R2 in step 3b.
     try {
       const create: any = await cfFetch(env, request, `/accounts/${accountId}/pages/projects`, {
@@ -1626,9 +1655,9 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
       pushHistory("pages-create", false, `Pages project creation failed: ${msg}`);
       agent.status = "error";
       await env.ARTIFACTS.put(`agent:${sanitized}`, JSON.stringify(agent));
-      return jsonResp({
+      return jsonRespC({
         error: `Branch + config ready, but Pages project creation failed: ${msg}`,
-        hint: "Direct Upload only — no Git connection required. Verify the CF token has account:pages:edit.",
+        hint: "Direct Upload only â€” no Git connection required. Verify the CF token has account:pages:edit.",
         agent,
       }, 502);
     }
@@ -1646,11 +1675,11 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
       } catch (err: any) {
         const msg = String(err?.message ?? err);
         pushHistory("pages-deploy", false, `Initial Direct Upload failed: ${msg}`);
-        // Don't bail — the project is created and the branch has config.
+        // Don't bail â€” the project is created and the branch has config.
         // The user can re-publish via /api/cf/deploy/agent/:name/republish.
       }
     } else {
-      pushHistory("pages-deploy", false, "AGENT_BUILDS R2 bucket not configured — skipped initial deploy");
+      pushHistory("pages-deploy", false, "AGENT_BUILDS R2 bucket not configured â€” skipped initial deploy");
     }
 
     // Step 4: attach custom domain to the Pages project.
@@ -1677,7 +1706,7 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
       details: { agentName: sanitized, branch, projectName, customDomain: body.customDomain },
     });
 
-    return jsonResp({
+    return jsonRespC({
       ok: true,
       agent,
       url: `https://${body.customDomain}`,
@@ -1686,7 +1715,7 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
     });
   }
 
-  // ── /api/cf/deploy/agent/list — list agents owned by the calling CF account
+  // â”€â”€ /api/cf/deploy/agent/list â€” list agents owned by the calling CF account
   if (subpath === "/deploy/agent/list" && method === "GET") {
     const { accountId } = resolveCfCreds(env, request);
     const list = await env.ARTIFACTS.list({ prefix: "agent:" });
@@ -1700,31 +1729,31 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
         if (!accountId || a.ownerCfAccountId === accountId) agents.push(a);
       } catch { /* skip */ }
     }
-    return jsonResp({ agents });
+    return jsonRespC({ agents });
   }
 
-  // ── /api/cf/deploy/agent/:name — get a single agent record
+  // â”€â”€ /api/cf/deploy/agent/:name â€” get a single agent record
   const agentDetailMatch = subpath.match(/^\/deploy\/agent\/([^\/]+)$/);
   if (agentDetailMatch && method === "GET") {
     const name = agentDetailMatch[1];
     const agent = await env.ARTIFACTS.get(`agent:${name}`, { type: "json" });
-    if (!agent) return jsonResp({ error: `Agent '${name}' not found` }, 404);
-    return jsonResp({ agent });
+    if (!agent) return jsonRespC({ error: `Agent '${name}' not found` }, 404);
+    return jsonRespC({ agent });
   }
 
-  // ── /api/cf/deploy/agent/:name/sync — commit files to the agent's branch
+  // â”€â”€ /api/cf/deploy/agent/:name/sync â€” commit files to the agent's branch
   // Pages auto-deploys on push. Body: { files: [{path, content}], message?: string }
   const agentSyncMatch = subpath.match(/^\/deploy\/agent\/([^\/]+)\/sync$/);
   if (agentSyncMatch && method === "POST") {
     const name = agentSyncMatch[1];
     const agent = (await env.ARTIFACTS.get(`agent:${name}`, { type: "json" })) as AgentRecord | null;
-    if (!agent) return jsonResp({ error: `Agent '${name}' not found` }, 404);
+    if (!agent) return jsonRespC({ error: `Agent '${name}' not found` }, 404);
     const body = await request.json().catch(() => ({})) as {
       files?: Array<{ path?: string; content?: string }>;
       message?: string;
     };
     if (!body.files || !Array.isArray(body.files) || body.files.length === 0) {
-      return jsonResp({ error: "files[] is required and must be non-empty" }, 400);
+      return jsonRespC({ error: "files[] is required and must be non-empty" }, 400);
     }
     const message = body.message || `agent: sync ${name}`;
     // Pre-fetch the existing SHAs for each file in parallel.
@@ -1773,24 +1802,24 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
     });
     await env.ARTIFACTS.put(`agent:${name}`, JSON.stringify(agent));
     if (errors.length > 0) {
-      return jsonResp({ ok: false, error: "Some files failed to commit", errors, agent }, 502);
+      return jsonRespC({ ok: false, error: "Some files failed to commit", errors, agent }, 502);
     }
-    return jsonResp({ ok: true, commitSha: lastSha, branch: agent.branch, fileCount: body.files.length });
+    return jsonRespC({ ok: true, commitSha: lastSha, branch: agent.branch, fileCount: body.files.length });
   }
 
-  // ── /api/cf/deploy/agent/:name/republish — re-Direct-Upload the latest R2 build
+  // â”€â”€ /api/cf/deploy/agent/:name/republish â€” re-Direct-Upload the latest R2 build
   // Useful when the user publishes a new build but Pages hasn't picked it up
-  // (Direct Upload doesn't auto-deploy — you have to push it again).
+  // (Direct Upload doesn't auto-deploy â€” you have to push it again).
   const republishMatch = subpath.match(/^\/deploy\/agent\/([^\/]+)\/republish$/);
   if (republishMatch && method === "POST") {
     const name = republishMatch[1];
     const agent = (await env.ARTIFACTS.get(`agent:${name}`, { type: "json" })) as AgentRecord | null;
-    if (!agent) return jsonResp({ error: `Agent '${name}' not found` }, 404);
+    if (!agent) return jsonRespC({ error: `Agent '${name}' not found` }, 404);
     const { accountId } = resolveCfCreds(env, request);
     if (!accountId) {
-      return jsonResp({ error: "CF account ID required" }, 400);
+      return jsonRespC({ error: "CF account ID required" }, 400);
     }
-    if (!env.AGENT_BUILDS) return jsonResp({ error: "AGENT_BUILDS R2 bucket not configured" }, 503);
+    if (!env.AGENT_BUILDS) return jsonRespC({ error: "AGENT_BUILDS R2 bucket not configured" }, 503);
     try {
       const buildFiles = await readLatestBuildFromR2(env);
       const deploy = await directUploadToPages(env, request, accountId, agent.pagesProjectName, buildFiles);
@@ -1804,7 +1833,7 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
         details: { deploymentId: deploy.deploymentId, totalBytes: deploy.totalBytes },
       });
       await env.ARTIFACTS.put(`agent:${name}`, JSON.stringify(agent));
-      return jsonResp({ ok: true, ...deploy, url: `https://${agent.customDomain}` });
+      return jsonRespC({ ok: true, ...deploy, url: `https://${agent.customDomain}` });
     } catch (err: any) {
       const msg = String(err?.message ?? err);
       agent.history.unshift({
@@ -1815,37 +1844,37 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
         summary: `Republish failed: ${msg}`,
       });
       await env.ARTIFACTS.put(`agent:${name}`, JSON.stringify(agent));
-      return jsonResp({ error: `Republish failed: ${msg}` }, 502);
+      return jsonRespC({ error: `Republish failed: ${msg}` }, 502);
     }
   }
 
-  // ── /api/agent/:name/data — read a file from the agent's branch
+  // â”€â”€ /api/agent/:name/data â€” read a file from the agent's branch
   const agentDataGetMatch = subpath.match(/^\/agent\/([^\/]+)\/data$/);
   if (agentDataGetMatch && method === "GET") {
     const name = agentDataGetMatch[1];
     const agent = (await env.ARTIFACTS.get(`agent:${name}`, { type: "json" })) as AgentRecord | null;
-    if (!agent) return jsonResp({ error: `Agent '${name}' not found` }, 404);
+    if (!agent) return jsonRespC({ error: `Agent '${name}' not found` }, 404);
     const url = new URL(request.url);
     const path = url.searchParams.get("path") || "";
-    if (!path) return jsonResp({ error: "path query param required (e.g. ?path=agent-data/memories.json)" }, 400);
+    if (!path) return jsonRespC({ error: "path query param required (e.g. ?path=agent-data/memories.json)" }, 400);
     try {
       const file: any = await ghAppApi(env, request, `/repos/${env.GH_REPO}/contents/${encodeURIComponent(path)}?ref=${encodeURIComponent(agent.branch)}`);
-      if (!file?.content) return jsonResp({ error: `File ${path} not found on ${agent.branch}` }, 404);
+      if (!file?.content) return jsonRespC({ error: `File ${path} not found on ${agent.branch}` }, 404);
       const content = atob(file.content.replace(/\n/g, ""));
-      return jsonResp({ path, content, sha: file.sha, branch: agent.branch });
+      return jsonRespC({ path, content, sha: file.sha, branch: agent.branch });
     } catch (err: any) {
-      return jsonResp({ error: `Failed to read ${path}: ${err?.message ?? err}` }, 502);
+      return jsonRespC({ error: `Failed to read ${path}: ${err?.message ?? err}` }, 502);
     }
   }
 
-  // ── /api/agent/:name/data — write a single file to the agent's branch
+  // â”€â”€ /api/agent/:name/data â€” write a single file to the agent's branch
   if (agentDataGetMatch && method === "PUT") {
     const name = agentDataGetMatch[1];
     const agent = (await env.ARTIFACTS.get(`agent:${name}`, { type: "json" })) as AgentRecord | null;
-    if (!agent) return jsonResp({ error: `Agent '${name}' not found` }, 404);
+    if (!agent) return jsonRespC({ error: `Agent '${name}' not found` }, 404);
     const body = await request.json().catch(() => ({})) as { path?: string; content?: string; message?: string };
     if (!body.path || typeof body.content !== "string") {
-      return jsonResp({ error: "path (string) and content (string) are required" }, 400);
+      return jsonRespC({ error: "path (string) and content (string) are required" }, 400);
     }
     // Look up existing SHA
     let existingSha: string | undefined;
@@ -1874,26 +1903,26 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
         summary: `Wrote ${body.path} to ${agent.branch}`,
       });
       await env.ARTIFACTS.put(`agent:${name}`, JSON.stringify(agent));
-      return jsonResp({ ok: true, path: body.path, sha: r?.content?.sha, commitSha: r?.commit?.sha, branch: agent.branch });
+      return jsonRespC({ ok: true, path: body.path, sha: r?.content?.sha, commitSha: r?.commit?.sha, branch: agent.branch });
     } catch (err: any) {
-      return jsonResp({ error: `Failed to write ${body.path}: ${err?.message ?? err}` }, 502);
+      return jsonRespC({ error: `Failed to write ${body.path}: ${err?.message ?? err}` }, 502);
     }
   }
 
-  // ── /api/cf/history — list of past deploys / stages / PRs
+  // â”€â”€ /api/cf/history â€” list of past deploys / stages / PRs
   if (subpath === "/history" && method === "GET") {
     const list: HistoryEntry[] = (await env.ARTIFACTS.get("history:list", { type: "json" })) || [];
-    return jsonResp({ history: list });
+    return jsonRespC({ history: list });
   }
 
-  // ── /api/cf/github/pr — create a PR with a list of file changes
+  // â”€â”€ /api/cf/github/pr â€” create a PR with a list of file changes
   if (subpath === "/github/pr" && method === "POST") {
-    if (!env.GH_REPO) return jsonResp({ error: "GH_REPO var is not configured" }, 503);
+    if (!env.GH_REPO) return jsonRespC({ error: "GH_REPO var is not configured" }, 503);
     const body = await request.json() as {
       title: string; body: string; head: string; base?: string; files: { path: string; content: string }[]
     };
     if (!body.title || !body.head || !Array.isArray(body.files) || body.files.length === 0) {
-      return jsonResp({ error: "title, head, and non-empty files[] required" }, 400);
+      return jsonRespC({ error: "title, head, and non-empty files[] required" }, 400);
     }
     const base = body.base || "main";
     // Run everything we can in parallel: base SHA, file SHAs (don't need branch), and branch creation (needs base SHA)
@@ -1905,7 +1934,7 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
       )),
     ]);
     const baseSha = refData.object?.sha;
-    if (!baseSha) return jsonResp({ error: `Base branch ${base} not found` }, 404);
+    if (!baseSha) return jsonRespC({ error: `Base branch ${base} not found` }, 404);
     // 2. Create the new branch (idempotent: 422 with "Reference already exists" is fine)
     try {
       await ghFetch(env, `/repos/${env.GH_REPO}/git/refs`, {
@@ -1948,12 +1977,12 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
       summary: `Opened PR #${prNumber}: ${body.title}`,
       details: { prNumber, url: prUrl, head: body.head, base, files: body.files.length },
     });
-    return jsonResp({ ok: true, prNumber, url: prUrl });
+    return jsonRespC({ ok: true, prNumber, url: prUrl });
   }
 
-  // ── /api/cf/agent/submit — agent evolution: submit a code change as a PR
+  // â”€â”€ /api/cf/agent/submit â€” agent evolution: submit a code change as a PR
   if (subpath === "/agent/submit" && method === "POST") {
-    if (!env.GH_REPO) return jsonResp({ error: "GH_REPO var is not configured" }, 503);
+    if (!env.GH_REPO) return jsonRespC({ error: "GH_REPO var is not configured" }, 503);
     const body = await request.json() as {
       reason: string;
       file: string;
@@ -1962,7 +1991,7 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
       head?: string;
     };
     if (!body.file || typeof body.before !== "string" || typeof body.after !== "string") {
-      return jsonResp({ error: "file, before, after are required" }, 400);
+      return jsonRespC({ error: "file, before, after are required" }, 400);
     }
     const head = body.head || `agent-evolution-${Date.now()}`;
     // Delegate to the same PR-handler logic by faking an internal request.
@@ -1980,7 +2009,7 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
     return handleCf(env, fakeRequest);
   }
 
-  return jsonResp({ error: `Unknown CF endpoint: ${method} ${subpath}` }, 404);
+  return jsonRespC({ error: `Unknown CF endpoint: ${method} ${subpath}` }, 404);
 }
 
 
