@@ -16,6 +16,9 @@ import CanvasPanel from './components/CanvasPanel';
 import ErrorBoundary from './components/ErrorBoundary';
 import AccountHub from './components/AccountHub';
 import DesktopRemotePanel from './components/DesktopRemotePanel';
+import BenchmarksView from './pages/BenchmarksView';
+import TunnelBridgePanel from './components/TunnelBridgePanel';
+import GitHubAppPanel from './components/GitHubAppPanel';
 import { SideDrawer } from './components/SideDrawer';
 import { BottomTabBar, type MobileTab } from './components/BottomTabBar';
 import { MobileSheet } from './components/MobileSheet';
@@ -474,6 +477,9 @@ function App() {
         <Route path="/app" element={<AppView />} />
         <Route path="/oauth/callback" element={<OAuthCallback />} />
         <Route path="/app-account" element={<AccountHub isStandalone={true} />} />
+        <Route path="/benchmarks" element={<BenchmarksView />} />
+        <Route path="/bridge" element={<TunnelBridgePanel />} />
+        <Route path="/github" element={<GitHubAppPanel />} />
         <Route path="/popout/:tab" element={<PopoutContainer />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

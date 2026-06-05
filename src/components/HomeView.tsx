@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
-import { Menu, Paperclip, Play, PenTool, Search, Image as ImageIcon, Globe, Mail, FileText, Sparkles } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Menu, Paperclip, Play, PenTool, Search, Image as ImageIcon, Globe, Mail, FileText, Sparkles, BarChart2, ArrowRight } from 'lucide-react';
 import type { ThreadInfo } from '../App';
+import TunnelBridgePanel from './TunnelBridgePanel';
 
 interface HomeViewProps {
   onStartThread: (prompt: string) => void;
@@ -13,6 +15,7 @@ interface HomeViewProps {
 const HomeView: React.FC<HomeViewProps> = ({ onStartThread, recentThreads, onSelectThread, onOpenMenu, isMobile }) => {
   const [taskMode, setTaskMode] = useState<'Auto' | 'Plan first' | 'Train'>('Auto');
   const [input, setInput] = useState('');
+  const navigate = useNavigate();
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -139,6 +142,49 @@ const HomeView: React.FC<HomeViewProps> = ({ onStartThread, recentThreads, onSel
           <button type="button" className="action-tile" onClick={() => setInput("Brainstorm 5 ideas for: ")}>
             <span className="icon"><Sparkles size={16} /></span> Brainstorm
           </button>
+        </div>
+
+        <button
+          type="button"
+          className="glass-card glass-card--md glass-card--clickable"
+          onClick={() => navigate('/benchmarks')}
+          style={{ width: '100%' }}
+          aria-label="Open Benchmarks dashboard"
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div
+              style={{
+                width: '36px',
+                height: '36px',
+                borderRadius: '8px',
+                background: 'linear-gradient(135deg, rgba(16,185,129,0.15), rgba(59,130,246,0.15))',
+                border: '1px solid rgba(16,185,129,0.25)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#10B981',
+                flexShrink: 0,
+              }}
+            >
+              <BarChart2 size={18} />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', textAlign: 'left' }}>
+              <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                Benchmarks
+              </span>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
+                gbrain-evals scorecard · live /api/benchmarks
+              </span>
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--accent-primary)', fontSize: '0.75rem', fontWeight: 600 }}>
+            <span>Open</span>
+            <ArrowRight size={14} />
+          </div>
+        </button>
+
+        <div className="home-bridge-section">
+          <TunnelBridgePanel />
         </div>
 
         {recentThreads.length > 0 && (

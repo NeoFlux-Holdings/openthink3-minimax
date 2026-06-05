@@ -5,6 +5,7 @@ import {
   CfActionButtons, CfHistoryList, CfActivityLog,
 } from './CloudflareSyncPanelParts';
 import { getCfCreds, setCfCreds, clearCfCreds, cfAuthHeaders, resolveAccount, type CfCreds } from '../lib/cfCreds';
+import { getSession, revokeAndSignOut, CF_OAUTH_CONFIG } from '../lib/cfOAuth';
 
 /* ------------------------------------------------------------------ */
 /* CloudflareSyncPanel                                                 */
@@ -180,6 +181,7 @@ function reducer(state: State, action: Action): State {
 export default function CloudflareSyncPanel({ apiBase }: CloudflareSyncPanelProps) {
   const base = apiBase || getApiBase();
   const [creds, setCredsState] = useState<CfCreds | null>(() => getCfCreds());
+  const [oauthSession, setOauthSession] = useState(() => getSession());
   const [connectToken, setConnectToken] = useState('');
   const [connectBusy, setConnectBusy] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
@@ -204,6 +206,30 @@ export default function CloudflareSyncPanel({ apiBase }: CloudflareSyncPanelProp
     clearCfCreds();
     setCredsState(null);
   };
+
+  const handleOAuthSignIn = async () => {
+    setConnectError(null);
+    try {
+      const { beginAuthorize } = await import('../lib/cfOAuth');
+      await beginAuthorize(window.location.pathname);
+    } catch (e: any) {
+      setConnectError(e.message || String(e));
+    }
+  };
+
+  const handleOAuthDisconnect = async () => {
+    setConnectBusy(true);
+    try {
+      await revokeAndSignOut();
+      setOauthSession(null);
+    } finally {
+      setConnectBusy(false);
+    }
+  };
+
+  const effectiveCreds: CfCreds | null = oauthSession
+    ? { token: 'oauth', accountId: oauthSession.accountId ?? '', accountName: oauthSession.accountName, email: oauthSession.email }
+    : creds;
   const [state, dispatch] = useReducer(reducer, undefined, () => ({
     status: null,
     manifest: null,
@@ -368,13 +394,17 @@ export default function CloudflareSyncPanel({ apiBase }: CloudflareSyncPanelProp
       </div>
 
       <CfConnectionBanner
-        creds={creds}
+        creds={effectiveCreds}
+        isOAuth={!!oauthSession}
+        oauthConfigured={CF_OAUTH_CONFIG.isConfigured()}
         connectToken={connectToken}
         connectBusy={connectBusy}
         connectError={connectError}
         onTokenChange={setConnectToken}
         onConnect={handleConnect}
         onDisconnect={handleDisconnect}
+        onOAuthSignIn={handleOAuthSignIn}
+        onOAuthDisconnect={handleOAuthDisconnect}
       />
 
       <CfDiagnostics status={status} />

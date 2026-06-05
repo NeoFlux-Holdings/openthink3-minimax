@@ -1,68 +1,102 @@
-import React from 'react';
-import { Check, AlertCircle, Key, Download, Upload, GitPullRequest, History, Cpu, Package, Cloud, Terminal, RefreshCw, type LucideIcon } from 'lucide-react';
+import React, { useState } from 'react';
+import { Check, AlertCircle, Download, Upload, GitPullRequest, History, Cpu, Package, Cloud, Terminal, RefreshCw, ShieldCheck, type LucideIcon } from 'lucide-react';
 import type { CfCreds } from '../lib/cfCreds';
 
 export const CfConnectionBanner: React.FC<{
   creds: CfCreds | null;
+  isOAuth: boolean;
+  oauthConfigured: boolean;
   connectToken: string;
   connectBusy: boolean;
   connectError: string | null;
   onTokenChange: (v: string) => void;
   onConnect: () => void;
   onDisconnect: () => void;
-}> = ({ creds, connectToken, connectBusy, connectError, onTokenChange, onConnect, onDisconnect }) => (
-  creds ? (
-    <div className="glass-card glass-card--md" style={{ borderColor: 'rgba(16, 185, 129, 0.3)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10B981', boxShadow: '0 0 8px #10B981' }} />
-        <div style={{ display: 'flex', flexDirection: 'column' }}>
-          <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#10B981' }}>
-            Connected to {creds.accountName || creds.accountId}
-          </span>
-          {creds.email && (
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>{creds.email}</span>
-          )}
+  onOAuthSignIn: () => void;
+  onOAuthDisconnect: () => void;
+}> = ({ creds, isOAuth, oauthConfigured, connectToken, connectBusy, connectError, onTokenChange, onConnect, onDisconnect, onOAuthSignIn, onOAuthDisconnect }) => {
+  const [showToken, setShowToken] = useState(false);
+
+  if (creds) {
+    return (
+      <div className="glass-card glass-card--md" style={{ borderColor: 'rgba(16, 185, 129, 0.3)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {isOAuth
+            ? <ShieldCheck size={16} color="#10B981" />
+            : <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10B981', boxShadow: '0 0 8px #10B981' }} />}
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#10B981' }}>
+              {isOAuth ? 'Signed in' : 'Connected'} to {creds.accountName || creds.accountId}
+            </span>
+            {creds.email && (
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>{creds.email}</span>
+            )}
+          </div>
         </div>
-      </div>
-      <button type="button" className="btn btn-ghost" onClick={onDisconnect} style={{ fontSize: '0.75rem', padding: '4px 10px' }}>
-        Disconnect
-      </button>
-    </div>
-  ) : (
-    <div className="glass-card">
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-        <Key size={14} color="var(--accent-secondary)" />
-        <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)' }}>Connect Cloudflare</span>
-      </div>
-      <p style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', margin: '0 0 8px 0', lineHeight: 1.4 }}>
-        Paste a Cloudflare API token with Workers + Pages + Zones read scope. Stored only in your browser.
-      </p>
-      <div style={{ display: 'flex', gap: '8px' }}>
-        <input
-          type="password"
-          className="input-field"
-          value={connectToken}
-          onChange={e => onTokenChange(e.target.value)}
-          placeholder="cf-api-token-…"
-          style={{ fontSize: '0.8rem', padding: '8px 12px' }}
-          disabled={connectBusy}
-          aria-label="Cloudflare API token"
-        />
-        <button type="button"
-          className="btn btn-primary"
-          onClick={onConnect}
-          disabled={connectBusy || !connectToken.trim()}
-          style={{ padding: '8px 16px', minHeight: 0 }}
-        >
-          {connectBusy ? <RefreshCw size={12} className="spin" /> : 'Connect'}
+        <button type="button" className="btn btn-ghost" onClick={isOAuth ? onOAuthDisconnect : onDisconnect} style={{ fontSize: '0.75rem', padding: '4px 10px' }}>
+          {isOAuth ? 'Sign out' : 'Disconnect'}
         </button>
       </div>
+    );
+  }
+
+  return (
+    <div className="glass-card">
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+        <Cloud size={14} color="var(--accent-secondary)" />
+        <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)' }}>Connect Cloudflare</span>
+      </div>
+      {oauthConfigured && (
+        <>
+          <button type="button"
+            className="btn btn-primary"
+            onClick={onOAuthSignIn}
+            style={{ width: '100%', padding: '10px 14px', fontSize: '0.85rem', marginBottom: '10px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+          >
+            <ShieldCheck size={14} /> Sign in with Cloudflare
+          </button>
+          <button type="button"
+            className="btn btn-ghost"
+            onClick={() => setShowToken(s => !s)}
+            style={{ width: '100%', fontSize: '0.7rem', marginBottom: '10px' }}
+          >
+            {showToken ? 'Hide' : 'Or use an API token instead'} →
+          </button>
+        </>
+      )}
+      {(showToken || !oauthConfigured) && (
+        <>
+          <p style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)', margin: '0 0 8px 0', lineHeight: 1.4 }}>
+            Paste a Cloudflare API token with Workers + Pages + Zones read scope. Stored only in your browser.
+          </p>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <input
+              type="password"
+              className="input-field"
+              value={connectToken}
+              onChange={e => onTokenChange(e.target.value)}
+              placeholder="cf-api-token-…"
+              style={{ fontSize: '0.8rem', padding: '8px 12px' }}
+              disabled={connectBusy}
+              aria-label="Cloudflare API token"
+            />
+            <button type="button"
+              className="btn btn-primary"
+              onClick={onConnect}
+              disabled={connectBusy || !connectToken.trim()}
+              style={{ padding: '8px 16px', minHeight: 0 }}
+            >
+              {connectBusy ? <RefreshCw size={12} className="spin" /> : 'Connect'}
+            </button>
+          </div>
+        </>
+      )}
       {connectError && (
         <div style={{ fontSize: '0.75rem', color: '#EF4444', marginTop: '6px' }}>{connectError}</div>
       )}
     </div>
-  )
-);
+  );
+};
 
 export const CfDiagnostics: React.FC<{
   status: { configured: Record<string, any>; credentialsSource?: string } | null;

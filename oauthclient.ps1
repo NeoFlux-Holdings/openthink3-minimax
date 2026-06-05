@@ -20,7 +20,12 @@ $body = @{
     "http://localhost:5173/oauth/callback",
     "http://localhost:5173/auth/callback",
     "https://openthink3-worker.thomas-zarebczan.workers.dev/oauth/callback",
-    "https://openthink3-worker.thomas-zarebczan.workers.dev/auth/callback"
+    "https://openthink3-worker.thomas-zarebczan.workers.dev/auth/callback",
+    "https://openthink-harness.pages.dev/oauth/callback",
+    "https://beta3.open-think.app/oauth/callback",
+    "https://beta3.open-think.app/auth/callback",
+    "https://open-think.app/oauth/callback",
+    "https://open-think.app/auth/callback"
   )
   scopes = @(
     "account-settings.read",
@@ -38,7 +43,10 @@ $body = @{
   client_uri = "https://openthink3.com"
   allowed_cors_origins = @(
     "http://localhost:5173",
-    "https://openthink3-worker.thomas-zarebczan.workers.dev"
+    "https://openthink3-worker.thomas-zarebczan.workers.dev",
+    "https://openthink-harness.pages.dev",
+    "https://beta3.open-think.app",
+    "https://open-think.app"
   )
 } | ConvertTo-Json -Depth 6
 

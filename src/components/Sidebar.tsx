@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Library, Brain, Zap, Settings, HelpCircle, MessageSquare, Pin, ExternalLink, User, Monitor } from 'lucide-react';
+import { Plus, Search, Library, Brain, Zap, Settings, HelpCircle, MessageSquare, Pin, ExternalLink, User, Monitor, BarChart2, GitBranch, Radio } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import type { ThreadInfo } from '../App';
 
 interface SidebarProps {
@@ -34,6 +35,10 @@ const Sidebar: React.FC<SidebarProps> = ({
   const [isSummariesPoppedOut, setIsSummariesPoppedOut] = useState(() => {
     return localStorage.getItem('openthink_popout_summaries') === 'true';
   });
+  const navigate = useNavigate();
+  const goBenchmarks = () => navigate('/benchmarks');
+  const goBridge = () => navigate('/bridge');
+  const goGithub = () => navigate('/github');
 
   useEffect(() => {
     const handleStorage = (e: StorageEvent) => {
@@ -116,6 +121,9 @@ const Sidebar: React.FC<SidebarProps> = ({
             <SidebarItem icon={<Brain size={18} />} label="Learning" badge="3" isActive={activeCanvasTab === 'learning'} onClick={() => onSelectCanvasTab?.('learning')} />
             <SidebarItem icon={<Zap size={18} />} label="Skills" isActive={activeCanvasTab === 'skills'} onClick={() => onSelectCanvasTab?.('skills')} />
             <SidebarItem icon={<Monitor size={18} />} label="Desktop Remote" isActive={activeCanvasTab === 'desktop'} onClick={() => onSelectCanvasTab?.('desktop')} />
+            <SidebarItem icon={<BarChart2 size={18} />} label="Benchmarks" isActive={false} onClick={goBenchmarks} />
+            <SidebarItem icon={<Radio size={18} />} label="Local Agent Bridge" isActive={false} onClick={goBridge} />
+            <SidebarItem icon={<GitBranch size={18} />} label="GitHub App" isActive={false} onClick={goGithub} />
           </div>
 
           <div className="sidebar-divider" />

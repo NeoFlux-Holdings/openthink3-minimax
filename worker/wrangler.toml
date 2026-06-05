@@ -53,6 +53,8 @@ crons = ["0 5 * * *", "0 6 * * *"]
 #   npx wrangler secret put GH_TOKEN
 #   npx wrangler secret put SESSION_SECRET
 #   npx wrangler secret put OAUTH_CLIENT_ID
+#   npx wrangler secret put GITHUB_APP_PRIVATE_KEY
+#   npx wrangler secret put GITHUB_INSTALL_TOKEN_KEY
 # and via `npx wrangler deploy` env={...} for the vars below.
 [vars]
 CF_ACCOUNT_ID = ""
@@ -63,3 +65,9 @@ OAUTH_USERINFO_URL = "https://dash.cloudflare.com/oauth2/userinfo"
 OAUTH_REVOKE_URL = "https://dash.cloudflare.com/oauth2/revoke"
 # Default worker host (used to detect custom-domain requests that should require auth).
 WORKER_DEFAULT_HOST = "openthink3-worker.thomas-zarebczan.workers.dev"
+# GitHub App installation flow (preferred over GH_TOKEN PAT for per-user scoping).
+# Set GITHUB_APP_PRIVATE_KEY and GITHUB_INSTALL_TOKEN_KEY via `wrangler secret put`.
+# GITHUB_APP_PRIVATE_KEY: multi-line PEM with \n escapes (e.g. "$(cat app.pem)").
+# GITHUB_INSTALL_TOKEN_KEY: 32+ byte random hex for AES-GCM (e.g. `openssl rand -hex 32`).
+GITHUB_APP_ID = ""
+GITHUB_APP_SLUG = ""

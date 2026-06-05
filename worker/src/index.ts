@@ -33,6 +33,16 @@ import {
   handleAuthLogout,
   requireApiAuth,
 } from "./auth.js";
+import {
+  handleGithubInstall,
+  handleGithubCallback,
+  handleGithubRepos,
+  handleGithubPR,
+  handleGithubIssue,
+  handleGithubStatus,
+} from "./githubApp.js";
+import { handleBridge } from "./tunnel.js";
+import { handleBenchmarksRoute } from "./benchmarks.js";
 
 export interface Env {
   AI: any;
@@ -58,6 +68,11 @@ export interface Env {
   OAUTH_USERINFO_URL?: string;
   OAUTH_REVOKE_URL?: string;
   WORKER_DEFAULT_HOST?: string;
+  // GitHub App installation (preferred over GH_TOKEN PAT for per-user scoping).
+  GITHUB_APP_ID?: string;
+  GITHUB_APP_SLUG?: string;
+  GITHUB_APP_PRIVATE_KEY?: string;
+  GITHUB_INSTALL_TOKEN_KEY?: string;
 }
 
 // OrchestratorDO acts as the MCP Server (Agent B)
@@ -494,6 +509,48 @@ export default {
       if (denied) return denied;
     }
 
+    // ── GitHub App installation flow (/api/github/*) ──────────────
+    if (url.pathname.startsWith("/api/github/")) {
+      if (request.method === "OPTIONS") {
+        return new Response(null, { headers: corsHeaders() });
+      }
+      try {
+        const sub = url.pathname.replace(/^\/api\/github\//, "");
+        switch (sub) {
+          case "install":
+            if (request.method !== "GET") return jsonResp({ error: "Method not allowed" }, 405);
+            return handleGithubInstall(request, env);
+          case "callback":
+            return handleGithubCallback(request, env);
+          case "repos":
+            if (request.method !== "GET") return jsonResp({ error: "Method not allowed" }, 405);
+            return handleGithubRepos(request, env);
+          case "status":
+            if (request.method !== "GET") return jsonResp({ error: "Method not allowed" }, 405);
+            return handleGithubStatus(request, env);
+          case "prs":
+            if (request.method !== "POST") return jsonResp({ error: "Method not allowed" }, 405);
+            return handleGithubPR(request, env);
+          case "issues":
+            if (request.method !== "POST") return jsonResp({ error: "Method not allowed" }, 405);
+            return handleGithubIssue(request, env);
+          default:
+            return jsonResp({ error: `Unknown GitHub endpoint: ${sub}` }, 404);
+        }
+      } catch (err: any) {
+        return jsonResp({ error: err?.message ?? String(err) }, 500);
+      }
+    }
+
+    // ── Local Agent Bridge (/api/bridge/*) ──────────────────────
+    if (url.pathname.startsWith("/api/bridge")) {
+      try {
+        return await handleBridge(env, request, url, ctx);
+      } catch (err: any) {
+        return jsonResp({ error: err?.message ?? String(err) }, 500);
+      }
+    }
+
     // ── Brain API (/api/brain/*) ────────────────────────────────
     if (url.pathname.startsWith("/api/brain/")) {
       const subpath = url.pathname.replace("/api/brain", "");
@@ -681,6 +738,10 @@ export default {
         return jsonResp({ error: err?.message ?? String(err) }, 500);
       }
     }
+
+    // ── Benchmarks store (/api/benchmarks, /api/benchmarks/run) ──
+    const benchRes = await handleBenchmarksRoute(env, request, url, ctx);
+    if (benchRes) return benchRes;
 
     // ── Thread routing (existing) ───────────────────────────────
     // gbrain history (capture) is at /api/skill/capture and stores to
