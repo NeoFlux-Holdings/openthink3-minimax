@@ -1227,6 +1227,117 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
     });
   }
 
+  // ── /api/cf/deploy/agent — full per-agent provisioning
+  // Body: { agentName: string, customDomain: string }
+  // Creates a NEW Pages project named "agent-<sanitized-name>" and attaches
+  // the user's customDomain to it. Returns the project + domain info.
+  if (subpath === "/deploy/agent" && method === "POST") {
+    const body = await request.json().catch(() => ({})) as { agentName?: string; customDomain?: string };
+    if (!body.agentName || typeof body.agentName !== "string") {
+      return jsonResp({ error: "agentName (string) is required" }, 400);
+    }
+    if (!body.customDomain || typeof body.customDomain !== "string") {
+      return jsonResp({ error: "customDomain (string) is required" }, 400);
+    }
+    const { accountId } = resolveCfCreds(env, request);
+    if (!accountId) {
+      return jsonResp({ error: "CF account ID required. Set CF_ACCOUNT_ID env var or pass X-CF-Account-Id header." }, 400);
+    }
+    const sanitized = body.agentName.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
+    if (!sanitized) {
+      return jsonResp({ error: "agentName produced an empty project name after sanitization (use letters, numbers, or hyphens)" }, 400);
+    }
+    const projectName = `agent-${sanitized}`;
+    const projectId = `pages-${Date.now()}-${sanitized}`;
+
+    // 1. Create the Pages project.
+    let projectResult: any = null;
+    let projectCreated = false;
+    try {
+      const create = await cfFetch(env, request, `/accounts/${accountId}/pages/projects`, {
+        method: "POST",
+        body: JSON.stringify({ name: projectName, production_branch: "main" }),
+      });
+      projectResult = create.result;
+      projectCreated = true;
+      await appendHistory(env, {
+        id: projectId,
+        ts: Date.now(),
+        actor: "user",
+        type: "pages",
+        ok: true,
+        summary: `Created Pages project ${projectName} for agent ${sanitized}`,
+        details: { projectName, subdomain: projectResult?.subdomain, agentName: sanitized, customDomain: body.customDomain },
+      });
+    } catch (err: any) {
+      const msg = String(err?.message ?? err);
+      // If the project already exists, that's fine — we can still attach the domain.
+      if (/already exists|name.*taken|name.*in use/i.test(msg)) {
+        projectCreated = true;
+        try {
+          const existing = await cfFetch(env, request, `/accounts/${accountId}/pages/projects/${projectName}`);
+          projectResult = existing.result;
+        } catch { /* ignore */ }
+      } else {
+        return jsonResp({ error: `Failed to create Pages project ${projectName}: ${msg}` }, 502);
+      }
+    }
+
+    // 2. Attach the user's custom domain to the new project.
+    let domainResult: any = null;
+    let domainAttached = false;
+    try {
+      const attach = await cfFetch(env, request, `/accounts/${accountId}/pages/projects/${projectName}/domains`, {
+        method: "POST",
+        body: JSON.stringify({ name: body.customDomain }),
+      });
+      domainResult = attach.result;
+      domainAttached = true;
+      await appendHistory(env, {
+        id: `domain-${Date.now()}-${sanitized}`,
+        ts: Date.now(),
+        actor: "user",
+        type: "pages",
+        ok: true,
+        summary: `Attached ${body.customDomain} to ${projectName}`,
+        details: { projectName, domain: body.customDomain, status: domainResult?.status ?? "pending" },
+      });
+    } catch (err: any) {
+      const msg = String(err?.message ?? err);
+      return jsonResp({
+        ok: projectCreated,
+        projectCreated,
+        project: projectResult ? {
+          name: projectName,
+          id: projectResult.id,
+          subdomain: projectResult.subdomain,
+          url: projectResult.subdomain ? `https://${projectResult.subdomain}` : null,
+        } : null,
+        domainAttached: false,
+        error: `Project created but failed to attach ${body.customDomain}: ${msg}`,
+      }, 502);
+    }
+
+    return jsonResp({
+      ok: true,
+      projectCreated,
+      domainAttached,
+      project: {
+        name: projectName,
+        id: projectResult?.id,
+        subdomain: projectResult?.subdomain,
+        url: projectResult?.subdomain ? `https://${projectResult.subdomain}` : null,
+      },
+      domain: {
+        name: body.customDomain,
+        status: domainResult?.status ?? "initializing",
+        id: domainResult?.id ?? null,
+      },
+      url: `https://${body.customDomain}`,
+      agentName: sanitized,
+    });
+  }
+
   // ── /api/cf/history — list of past deploys / stages / PRs
   if (subpath === "/history" && method === "GET") {
     const list: HistoryEntry[] = (await env.ARTIFACTS.get("history:list", { type: "json" })) || [];

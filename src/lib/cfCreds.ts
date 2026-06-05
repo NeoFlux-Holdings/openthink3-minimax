@@ -22,7 +22,9 @@ export function cfAuthHeaders(): Record<string, string> {
   if (typeof window === 'undefined') return {};
   const oauth = getSession();
   if (oauth?.accessToken) {
-    return { Authorization: `Bearer ${oauth.accessToken}` };
+    const headers: Record<string, string> = { Authorization: `Bearer ${oauth.accessToken}` };
+    if (oauth.accountId) headers['X-CF-Account-Id'] = oauth.accountId;
+    return headers;
   }
   const c = getCfCreds();
   if (!c) return {};

@@ -149,10 +149,13 @@ export const useDeployFlow = () => {
     void loadDomains();
   }, []);
 
-  // Attach the custom domain via the worker's /api/cf/pages/attach-domain endpoint.
+  // Provision a new per-agent Pages project and attach the custom domain.
+  // Calls the worker's /api/cf/deploy/agent endpoint which:
+  //   1. creates `agent-<name>` Pages project
+  //   2. attaches <customDomain> to it
   // Returns the resolved agent URL on success.
-  const attachDomain = useEffectEvent(async (target: string): Promise<string | null> => {
-    updateStep('attach', { status: 'running', detail: `Connecting ${target}…` });
+  const provisionAgent = useEffectEvent(async (agentName: string, customDomain: string): Promise<string | null> => {
+    updateStep('attach', { status: 'running', detail: `Provisioning agent-${agentName}.pages.dev…` });
     try {
       const custom = localStorage.getItem('openthink_api_url');
       const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
@@ -160,23 +163,26 @@ export const useDeployFlow = () => {
         ? (custom.endsWith('/') ? custom.slice(0, -1) : custom)
         : (isLocal ? 'http://127.0.0.1:8787' : `${window.location.origin}`);
       const { cfAuthHeaders } = await import('../lib/cfCreds');
-      const res = await fetch(`${apiBase}/api/cf/pages/attach-domain`, {
+      const res = await fetch(`${apiBase}/api/cf/deploy/agent`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...cfAuthHeaders() },
-        body: JSON.stringify({ domain: target }),
+        body: JSON.stringify({ agentName, customDomain }),
       });
       if (!res.ok) {
         const err = await res.text();
-        updateStep('attach', { status: 'error', detail: `Could not attach: ${err}` });
+        updateStep('attach', { status: 'error', detail: `Could not provision: ${err}` });
         return null;
       }
       const data = await res.json();
-      if (data.url) {
-        updateStep('attach', { status: 'done', detail: `Route attached for ${target}` });
-        return data.url;
-      }
-      updateStep('attach', { status: 'done', detail: 'Domain attached' });
-      return `https://${target}`;
+      const pagesUrl = data.project?.url;
+      const finalUrl = data.url || pagesUrl;
+      const detail = data.projectCreated && data.domainAttached
+        ? `Live at ${customDomain} (project ${data.project?.name})`
+        : data.projectCreated
+        ? `Project ${data.project?.name} created; ${customDomain} attaching…`
+        : `Reused project ${data.project?.name}`;
+      updateStep('attach', { status: 'done', detail });
+      return finalUrl;
     } catch (err) {
       updateStep('attach', { status: 'error', detail: err instanceof Error ? err.message : String(err) });
       return null;
@@ -204,7 +210,7 @@ export const useDeployFlow = () => {
       updateStep('site', { status: 'running' });
       await new Promise(r => setTimeout(r, 600));
       updateStep('site', { status: 'done', detail: 'openthink-harness published' });
-      const url = await attachDomain(finalDomain);
+      const url = await provisionAgent(agentName, finalDomain);
       updateStep('open', { status: 'done', detail: url ?? `https://${finalDomain}` });
       if (url) setAgentUrl(url);
       localStorage.setItem('openthink_api_url', 'https://openthink3-worker.thomas-zarebczan.workers.dev');
@@ -288,7 +294,7 @@ export const useDeployFlow = () => {
           eventSource.close();
           localStorage.setItem('openthink_api_url', 'https://openthink3-worker.thomas-zarebczan.workers.dev');
           localStorage.setItem(STORAGE_KEYS.customDomain, finalDomain);
-          const url = await attachDomain(finalDomain);
+          const url = await provisionAgent(agentName, finalDomain);
           updateStep('open', { status: 'done', detail: url ?? `https://${finalDomain}` });
           if (url) setAgentUrl(url);
           setIsDeploying(false);
