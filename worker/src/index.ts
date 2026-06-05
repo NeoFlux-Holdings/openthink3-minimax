@@ -768,7 +768,9 @@ export default {
       try {
         return await handleCf(env, request);
       } catch (err: any) {
-        return jsonResp({ error: err?.message ?? String(err) }, 500);
+        // CfHttpError carries an explicit status (4xx); anything else is 500.
+        const status = err?.name === "CfHttpError" ? (err.status as number) : 500;
+        return jsonResp({ error: err?.message ?? String(err) }, status);
       }
     }
 
@@ -895,14 +897,32 @@ function resolveCfCreds(env: Env, request: Request): {
   accountId: string | null;
   source: "header" | "env" | "none";
 } {
-  const headerToken = request.headers.get("X-CF-Token");
-  const headerAccount = request.headers.get("X-CF-Account-Id");
+  // 1. Explicit X-CF-Token header (legacy PAT path).
+  let headerToken = request.headers.get("X-CF-Token");
+  let headerAccount = request.headers.get("X-CF-Account-Id");
+  // 2. OAuth session: Authorization: Bearer <access_token>. The SPA sends
+  //    this (with X-CF-Account-Id) when the user signed in via the OAuth
+  //    flow rather than by pasting a PAT. Without this fallback, every
+  //    /api/cf/* call 500s for OAuth users.
+  if (!headerToken) {
+    const auth = request.headers.get("Authorization") || request.headers.get("authorization");
+    if (auth?.toLowerCase().startsWith("bearer ")) {
+      headerToken = auth.slice(7).trim();
+    }
+  }
   const token = headerToken || env.CF_API_TOKEN || null;
   const accountId = headerAccount || env.CF_ACCOUNT_ID || null;
   let source: "header" | "env" | "none" = "none";
   if (headerToken || headerAccount) source = "header";
   else if (token || accountId) source = "env";
   return { token, accountId, source };
+}
+
+class CfHttpError extends Error {
+  constructor(public status: number, message: string, public detail?: unknown) {
+    super(message);
+    this.name = "CfHttpError";
+  }
 }
 
 async function cfFetch(
@@ -912,8 +932,8 @@ async function cfFetch(
   init: RequestInit = {}
 ): Promise<any> {
   const { token, accountId } = resolveCfCreds(env, request);
-  if (!token) throw new Error("CF credentials missing: provide X-CF-Token header or set CF_API_TOKEN env var");
-  if (!accountId) throw new Error("CF credentials missing: provide X-CF-Account-Id header or set CF_ACCOUNT_ID env var");
+  if (!token) throw new CfHttpError(401, "CF credentials missing: sign in (OAuth) or pass X-CF-Token header");
+  if (!accountId) throw new CfHttpError(401, "CF account ID missing: pass X-CF-Account-Id header or set CF_ACCOUNT_ID env var");
   const url = `https://api.cloudflare.com/client/v4${path}`;
   const initHeaders = (init.headers as Record<string, string>) || {};
   const contentType = initHeaders["Content-Type"] || initHeaders["content-type"] || "application/json";
