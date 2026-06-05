@@ -12,22 +12,20 @@ const STORAGE_KEY = 'openthink_cf_oauth_v1';
 const PENDING_KEY = 'openthink_cf_oauth_pending_v1';
 
 export const CF_OAUTH_CONFIG = {
-  clientId: 'REPLACE_WITH_YOUR_CLOUDFLARE_OAUTH_CLIENT_ID',
+  clientId: '23e10929d8b4e594d8756f6e24b2578c',
   authorizeUrl: 'https://dash.cloudflare.com/oauth2/auth',
   tokenUrl: 'https://dash.cloudflare.com/oauth2/token',
   revokeUrl: 'https://dash.cloudflare.com/oauth2/revoke',
   userInfoUrl: 'https://dash.cloudflare.com/oauth2/userinfo',
   scopes: [
-    'account:read',
-    'user:read',
-    'workers:write',
-    'workers_scripts:write',
-    'workers_routes:write',
-    'workers_kv:write',
-    'pages:write',
-    'd1:write',
-    'zone:read',
-    'ai:write',
+    'account-settings.read',
+    'user-details.read',
+    'workers-scripts.write',
+    'workers-routes.write',
+    'workers-kv-storage.write',
+    'page.write',
+    'd1.write',
+    'zone.read',
     'offline_access',
   ] as const,
   isConfigured(): boolean {

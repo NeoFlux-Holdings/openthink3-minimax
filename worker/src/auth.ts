@@ -29,7 +29,7 @@ const COOKIE_NAME = 'ot_session';
 const PENDING_TTL_SECONDS = 600; // 10 min
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
 
-const AGENT_SCOPES = ['user:read', 'account:read', 'offline_access'];
+const AGENT_SCOPES = ['user-details.read', 'account-settings.read', 'offline_access'];
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
