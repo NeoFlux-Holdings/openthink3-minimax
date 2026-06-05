@@ -292,31 +292,36 @@ export async function handleCallback(search: string = window.location.search): P
 
 type UserInfo = { email?: string; accountId?: string; accountName?: string };
 
+// CF's userinfo + /accounts endpoints don't return CORS headers, so we must
+// proxy through our worker. The worker does the fetch server-side (no CORS),
+// then returns the data to the SPA with our own CORS headers.
+async function proxyUserInfo(accessToken: string, path: string): Promise<any | null> {
+  try {
+    const apiBase = (typeof window !== 'undefined' && localStorage.getItem('openthink_api_url'))
+      || (typeof window !== 'undefined' ? window.location.origin : '');
+    const r = await fetch(`${apiBase}/api/cf/proxy/${path}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchUserInfo(accessToken: string): Promise<UserInfo> {
   const out: UserInfo = {};
-  try {
-    const r = await fetch(CF_OAUTH_CONFIG.userInfoUrl, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    if (r.ok) {
-      const j = await r.json();
-      out.email = j.email;
-      out.accountId = j.account_id ?? j.sub;
-    }
-  } catch { /* ignore */ }
-  try {
-    const r = await fetch('https://api.cloudflare.com/client/v4/accounts', {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    if (r.ok) {
-      const j = await r.json();
-      const a = (j.result ?? [])[0];
-      if (a) {
-        out.accountId = out.accountId ?? a.id;
-        out.accountName = a.name;
-      }
-    }
-  } catch { /* ignore */ }
+  const info = await proxyUserInfo(accessToken, 'userinfo');
+  if (info) {
+    out.email = info.email;
+    out.accountId = info.account_id ?? info.sub;
+  }
+  const accounts = await proxyUserInfo(accessToken, 'accounts');
+  const a = accounts?.result?.[0];
+  if (a) {
+    out.accountId = out.accountId ?? a.id;
+    out.accountName = a.name;
+  }
   return out;
 }
 

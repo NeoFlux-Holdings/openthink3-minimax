@@ -256,8 +256,9 @@ If you need context or memory, call the check_context tool.`;
                     role: "tool",
                     name: tc.name,
                     content: JSON.stringify(toolResult)
-                  });
-                }
+    });
+  }
+
               }));
             };
 
@@ -521,7 +522,10 @@ export default {
     }
 
     // ── Auth gate: block /api/* when host is a custom domain ──────────────
-    if (url.pathname.startsWith("/api/")) {
+    // Skip the /api/cf/proxy/* paths — they authenticate the user via their
+    // own Bearer token (the OAuth access token from the SPA's localStorage),
+    // not the worker's session cookie.
+    if (url.pathname.startsWith("/api/") && !url.pathname.startsWith("/api/cf/proxy/")) {
       const denied = await requireApiAuth(request, env);
       if (denied) return denied;
     }
@@ -944,6 +948,45 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
       credentialsSource: source,
       manifest: await loadManifest(env),
     });
+  }
+
+  // ── /api/cf/proxy/{userinfo,accounts} — CORS-free proxy for the SPA.
+  // CF's userinfo + /accounts endpoints don't return Access-Control-Allow-Origin,
+  // so a browser-based SPA can't read them directly. We proxy server-side and
+  // re-emit CORS so the SPA can read the body. The SPA's Bearer token is the
+  // OAuth access token from localStorage; the auth gate already skips /api/cf/proxy/*.
+  if (subpath.startsWith("/proxy/")) {
+    const tail = subpath.replace(/^\/proxy\//, "");
+    const auth = request.headers.get("Authorization") || "";
+    const m = auth.match(/^Bearer\s+(.+)$/i);
+    if (!m) return jsonResp({ error: "Missing Authorization: Bearer <token>" }, 401);
+    const token = m[1];
+    let upstreamUrl: string;
+    switch (tail) {
+      case "userinfo":
+        upstreamUrl = "https://dash.cloudflare.com/oauth2/userinfo";
+        break;
+      case "accounts":
+        upstreamUrl = "https://api.cloudflare.com/client/v4/accounts?per_page=1";
+        break;
+      default:
+        return jsonResp({ error: `Unknown proxy path: ${tail}` }, 404);
+    }
+    try {
+      const r = await fetch(upstreamUrl, {
+        headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+      });
+      const body = await r.text();
+      return new Response(body, {
+        status: r.status,
+        headers: {
+          ...corsHeaders(),
+          "Content-Type": r.headers.get("Content-Type") || "application/json",
+        },
+      });
+    } catch (err: any) {
+      return jsonResp({ error: `proxy failed: ${err?.message ?? String(err)}` }, 502);
+    }
   }
 
   // ── /api/cf/resolve-account — discover account/zones for a per-request token
