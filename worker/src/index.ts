@@ -1188,6 +1188,45 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
     });
   }
 
+  // ── /api/cf/pages/attach-domain — attach a custom domain to a Pages project
+  // Body: { domain: "subdomain.example.com", projectName?: "openthink-harness" }
+  // Returns: { ok, url, status, result, source }
+  if (subpath === "/pages/attach-domain" && method === "POST") {
+    const body = await request.json().catch(() => ({})) as { domain?: string; projectName?: string };
+    if (!body.domain || typeof body.domain !== "string") {
+      return jsonResp({ error: "domain (string) is required in body" }, 400);
+    }
+    const projectName = body.projectName || "openthink-harness";
+    let cfData: any;
+    try {
+      const accountId = resolveCfCreds(env, request).accountId;
+      if (!accountId) {
+        return jsonResp({ error: "CF account ID required. Set CF_ACCOUNT_ID env var or pass X-CF-Account-Id header." }, 400);
+      }
+      cfData = await cfFetch(env, request, `/accounts/${accountId}/pages/projects/${projectName}/domains`, {
+        method: "POST",
+        body: JSON.stringify({ name: body.domain }),
+      });
+    } catch (err: any) {
+      // cfFetch throws on !success; extract a useful message.
+      const msg = String(err?.message ?? err);
+      return jsonResp({ error: `Cloudflare rejected the domain attach: ${msg}` }, 502);
+    }
+    const result = cfData.result ?? {};
+    return jsonResp({
+      ok: true,
+      url: `https://${body.domain}`,
+      status: result.status ?? "pending",
+      result: {
+        id: result.id,
+        name: result.name,
+        status: result.status,
+        verification_data: result.verification_data ?? null,
+      },
+      projectName,
+    });
+  }
+
   // ── /api/cf/history — list of past deploys / stages / PRs
   if (subpath === "/history" && method === "GET") {
     const list: HistoryEntry[] = (await env.ARTIFACTS.get("history:list", { type: "json" })) || [];

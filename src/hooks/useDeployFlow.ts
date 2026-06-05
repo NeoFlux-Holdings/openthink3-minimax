@@ -149,14 +149,20 @@ export const useDeployFlow = () => {
     void loadDomains();
   }, []);
 
-  // Attach the custom domain via the dev orchestrator's /api/cloudflare-attach-domain
-  // endpoint. Returns the resolved agent URL on success.
+  // Attach the custom domain via the worker's /api/cf/pages/attach-domain endpoint.
+  // Returns the resolved agent URL on success.
   const attachDomain = useEffectEvent(async (target: string): Promise<string | null> => {
     updateStep('attach', { status: 'running', detail: `Connecting ${target}…` });
     try {
-      const res = await fetch('/api/cloudflare-attach-domain', {
+      const custom = localStorage.getItem('openthink_api_url');
+      const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      const apiBase = custom
+        ? (custom.endsWith('/') ? custom.slice(0, -1) : custom)
+        : (isLocal ? 'http://127.0.0.1:8787' : `${window.location.origin}`);
+      const { cfAuthHeaders } = await import('../lib/cfCreds');
+      const res = await fetch(`${apiBase}/api/cf/pages/attach-domain`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...cfAuthHeaders() },
         body: JSON.stringify({ domain: target }),
       });
       if (!res.ok) {
