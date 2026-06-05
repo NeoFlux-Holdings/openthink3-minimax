@@ -1082,7 +1082,7 @@ async function ghAppApi(env: Env, request: Request, path: string, init: RequestI
     throw new Error("GITHUB_INSTALL_TOKEN_KEY not configured on this worker");
   }
   const session = await readSessionLite(request, env);
-  if (!session) throw new Error("not_signed_in: please sign in with Cloudflare OAuth first");
+  if (!session) throw new Error("not_signed_in: please sign in with the open-think-auth GitHub App (visit /github and install it)");
   const accountKey = session.accountId || session.sub;
   const stored = (await env.ARTIFACTS.get(`gh:install:token:${accountKey}`, { type: "json" })) as
     | { tokenCiphertext: string; id: number }
@@ -1541,7 +1541,7 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
   //   5. Store an agent record in KV
   // Pages auto-deploys on every push to the agent's branch.
   if (subpath === "/deploy/agent" && method === "POST") {
-    const body = await request.json().catch(() => ({})) as { agentName?: string; customDomain?: string };
+    const body = await request.json().catch(() => ({})) as { agentName?: string; customDomain?: string; force?: boolean };
     if (!body.agentName || typeof body.agentName !== "string") {
       return jsonRespC({ error: "agentName (string) is required" }, 400);
     }
@@ -1559,9 +1559,20 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
     }
     const branch = `agent/${sanitized}`;
     const projectName = `agent-${sanitized}`;
-    const existing = await env.ARTIFACTS.get(`agent:${sanitized}`, { type: "json" });
+    const existing = (await env.ARTIFACTS.get(`agent:${sanitized}`, { type: "json" })) as AgentRecord | null;
     if (existing) {
-      return jsonRespC({ error: `Agent '${sanitized}' already exists`, agent: existing }, 409);
+      // Allow retry when the previous attempt errored (e.g. user wasn't
+      // signed in to the GitHub App yet). Only block when the agent is
+      // active — that's a real collision.
+      if (existing.status === "error" || body.force) {
+        await env.ARTIFACTS.delete(`agent:${sanitized}`);
+        await env.ARTIFACTS.delete(`agent-domain:${existing.customDomain}`);
+      } else {
+        return jsonRespC({
+          error: `Agent '${sanitized}' already exists and is active. Pass force: true to recreate it.`,
+          agent: existing,
+        }, 409);
+      }
     }
     const [ghOwner, ghRepo] = env.GH_REPO.split("/");
     const agent: AgentRecord = {

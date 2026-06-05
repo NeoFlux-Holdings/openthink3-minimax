@@ -169,7 +169,7 @@ export const useDeployFlow = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...cfAuthHeaders() },
         credentials: 'include',
-        body: JSON.stringify({ agentName, customDomain }),
+        body: JSON.stringify({ agentName, customDomain, force: true }),
       });
       if (!res.ok) {
         const err = await res.text();
@@ -177,7 +177,10 @@ export const useDeployFlow = () => {
         try { parsed = JSON.parse(err); } catch { /* keep raw */ }
         const hint = parsed.hint ? `\n${parsed.hint}` : '';
         const historyTail = parsed.agent?.history?.slice(0, 3).map((h: any) => `  • ${h.summary}`).join('\n');
-        updateStep('attach', { status: 'error', detail: `Could not provision: ${parsed.error ?? err}${hint}${historyTail ? '\n' + historyTail : ''}` });
+        const signInHint = String(parsed.error ?? err).includes('not_signed_in')
+          ? '\nInstall the open-think-auth GitHub App first: open the /github tab and click Install.'
+          : '';
+        updateStep('attach', { status: 'error', detail: `Could not provision: ${parsed.error ?? err}${signInHint}${hint}${historyTail ? '\n' + historyTail : ''}` });
         return null;
       }
       const data = await res.json();
