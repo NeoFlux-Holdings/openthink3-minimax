@@ -848,6 +848,30 @@ type HistoryEntry = {
   details?: any;
 };
 
+type AgentRecord = {
+  name: string;
+  branch: string;
+  pagesProjectName: string;
+  pagesProjectId?: string;
+  customDomain: string;
+  ownerCfAccountId: string;
+  cfAccountId: string;
+  githubOwner: string;
+  githubRepo: string;
+  createdAt: number;
+  lastSyncedAt?: number;
+  lastCommitSha?: string;
+  status: "creating" | "active" | "error";
+  history: Array<{
+    id: string;
+    ts: number;
+    type: string;
+    ok: boolean;
+    summary: string;
+    details?: any;
+  }>;
+};
+
 async function loadManifest(env: Env): Promise<any> {
   return (await env.ARTIFACTS.get("manifest", { type: "json" })) || {
     version: 0,
@@ -926,6 +950,120 @@ async function ghFetch(env: Env, path: string, init: RequestInit = {}): Promise<
     throw new Error(`GitHub API ${r.status}: ${txt.slice(0, 200)}`);
   }
   return r.json();
+}
+
+// ── App-based GH client (uses the GitHub App installation token, not a PAT) ─
+// The user installs open-think-auth on NeoFlux-Holdings once. The installation
+// token (encrypted with GITHUB_INSTALL_TOKEN_KEY) is stored at
+// `gh:install:token:<cfAccountId>` in ARTIFACTS. This helper reads the
+// session cookie, decrypts the token, and makes API calls.
+function agentHexToBytes(hex: string): Uint8Array {
+  const clean = hex.trim();
+  if (clean.length % 2 !== 0) throw new Error("GITHUB_INSTALL_TOKEN_KEY must be hex (even length)");
+  const out = new Uint8Array(clean.length / 2);
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(clean.slice(i * 2, i * 2 + 2), 16);
+  return out;
+}
+
+function agentB64Decode(s: string): Uint8Array {
+  const padded = s + "=".repeat((4 - (s.length % 4)) % 4);
+  const bin = atob(padded);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+async function agentDecryptToken(blob: string, keyHex: string): Promise<string> {
+  const sep = blob.indexOf(":");
+  if (sep < 0) throw new Error("Malformed encrypted token");
+  const iv = agentB64Decode(blob.slice(0, sep));
+  const ct = agentB64Decode(blob.slice(sep + 1));
+  const dek = await crypto.subtle.importKey("raw", agentHexToBytes(keyHex), { name: "AES-GCM" }, false, ["decrypt"]);
+  const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, dek, ct);
+  return new TextDecoder().decode(pt);
+}
+
+async function readSessionLite(request: Request, env: Env): Promise<{ sub: string; accountId?: string; email?: string } | null> {
+  if (!env.SESSION_SECRET) return null;
+  const cookieHeader = request.headers.get("Cookie") || "";
+  const out: Record<string, string> = {};
+  for (const part of cookieHeader.split(";")) {
+    const idx = part.indexOf("=");
+    if (idx < 0) continue;
+    const k = part.slice(0, idx).trim();
+    const v = part.slice(idx + 1).trim();
+    if (k) out[k] = decodeURIComponent(v);
+  }
+  const token = out["ot_session"];
+  if (!token) return null;
+  const dot = token.indexOf(".");
+  if (dot < 0) return null;
+  const payload = token.slice(0, dot);
+  const sigB64 = token.slice(dot + 1);
+  const enc = new TextEncoder();
+  const k = await crypto.subtle.importKey(
+    "raw",
+    enc.encode(env.SESSION_SECRET),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const expected = new Uint8Array(await crypto.subtle.sign("HMAC", k, enc.encode(payload)));
+  let provided: Uint8Array;
+  try {
+    provided = agentB64Decode(sigB64.replace(/-/g, "+").replace(/_/g, "/"));
+  } catch {
+    return null;
+  }
+  if (expected.length !== provided.length) return null;
+  let diff = 0;
+  for (let i = 0; i < expected.length; i++) diff |= expected[i] ^ provided[i];
+  if (diff !== 0) return null;
+  let session: any;
+  try {
+    session = JSON.parse(new TextDecoder().decode(agentB64Decode(payload.replace(/-/g, "+").replace(/_/g, "/"))));
+  } catch {
+    return null;
+  }
+  if (typeof session?.exp !== "number" || session.exp < Math.floor(Date.now() / 1000)) {
+    return null;
+  }
+  return { sub: session.sub, accountId: session.accountId, email: session.email };
+}
+
+async function ghAppApi(env: Env, request: Request, path: string, init: RequestInit = {}): Promise<any> {
+  if (!env.GITHUB_INSTALL_TOKEN_KEY) {
+    throw new Error("GITHUB_INSTALL_TOKEN_KEY not configured on this worker");
+  }
+  const session = await readSessionLite(request, env);
+  if (!session) throw new Error("not_signed_in: please sign in with Cloudflare OAuth first");
+  const accountKey = session.accountId || session.sub;
+  const stored = (await env.ARTIFACTS.get(`gh:install:token:${accountKey}`, { type: "json" })) as
+    | { tokenCiphertext: string; id: number }
+    | null;
+  if (!stored) {
+    throw new Error("github_app_not_installed: visit /github and install the open-think-auth GitHub App on your account");
+  }
+  const token = await agentDecryptToken(stored.tokenCiphertext, env.GITHUB_INSTALL_TOKEN_KEY);
+  const url = `https://api.github.com${path}`;
+  const r = await fetch(url, {
+    ...init,
+    headers: {
+      ...(init.headers as Record<string, string> || {}),
+      "Authorization": `Bearer ${token}`,
+      "Accept": "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+      "Content-Type": "application/json",
+    },
+  });
+  const text = await r.text();
+  let body: any;
+  try { body = text ? JSON.parse(text) : null; } catch { body = { raw: text }; }
+  if (r.status >= 400) {
+    const msg = body?.message || `GitHub API ${r.status}`;
+    throw new Error(`${msg} (${r.status})`);
+  }
+  return body;
 }
 
 async function handleCf(env: Env, request: Request): Promise<Response> {
@@ -1227,10 +1365,15 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
     });
   }
 
-  // ── /api/cf/deploy/agent — full per-agent provisioning
+  // ── /api/cf/deploy/agent — per-agent monorepo provisioning ─────────
   // Body: { agentName: string, customDomain: string }
-  // Creates a NEW Pages project named "agent-<sanitized-name>" and attaches
-  // the user's customDomain to it. Returns the project + domain info.
+  // For each new agent:
+  //   1. Create a branch `agent/<name>` in the monorepo (env.GH_REPO)
+  //   2. Commit agent-data/config.json to the branch
+  //   3. Create a Pages project `agent-<name>` bound to the branch
+  //   4. Attach the user's customDomain to the Pages project
+  //   5. Store an agent record in KV
+  // Pages auto-deploys on every push to the agent's branch.
   if (subpath === "/deploy/agent" && method === "POST") {
     const body = await request.json().catch(() => ({})) as { agentName?: string; customDomain?: string };
     if (!body.agentName || typeof body.agentName !== "string") {
@@ -1243,99 +1386,314 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
     if (!accountId) {
       return jsonResp({ error: "CF account ID required. Set CF_ACCOUNT_ID env var or pass X-CF-Account-Id header." }, 400);
     }
+    if (!env.GH_REPO) return jsonResp({ error: "GH_REPO var is not configured" }, 503);
     const sanitized = body.agentName.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
     if (!sanitized) {
-      return jsonResp({ error: "agentName produced an empty project name after sanitization (use letters, numbers, or hyphens)" }, 400);
+      return jsonResp({ error: "agentName produced an empty branch name (use letters, numbers, or hyphens)" }, 400);
     }
+    const branch = `agent/${sanitized}`;
     const projectName = `agent-${sanitized}`;
-    const projectId = `pages-${Date.now()}-${sanitized}`;
-
-    // 1. Create the Pages project.
-    let projectResult: any = null;
-    let projectCreated = false;
-    try {
-      const create = await cfFetch(env, request, `/accounts/${accountId}/pages/projects`, {
-        method: "POST",
-        body: JSON.stringify({ name: projectName, production_branch: "main" }),
-      });
-      projectResult = create.result;
-      projectCreated = true;
-      await appendHistory(env, {
-        id: projectId,
+    const existing = await env.ARTIFACTS.get(`agent:${sanitized}`, { type: "json" });
+    if (existing) {
+      return jsonResp({ error: `Agent '${sanitized}' already exists`, agent: existing }, 409);
+    }
+    const [ghOwner, ghRepo] = env.GH_REPO.split("/");
+    const agent: AgentRecord = {
+      name: sanitized,
+      branch,
+      pagesProjectName: projectName,
+      customDomain: body.customDomain,
+      ownerCfAccountId: accountId,
+      cfAccountId: accountId,
+      githubOwner: ghOwner,
+      githubRepo: ghRepo,
+      createdAt: Date.now(),
+      status: "creating",
+      history: [],
+    };
+    const pushHistory = (type: string, ok: boolean, summary: string, details?: any) => {
+      agent.history.unshift({
+        id: `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         ts: Date.now(),
-        actor: "user",
-        type: "pages",
-        ok: true,
-        summary: `Created Pages project ${projectName} for agent ${sanitized}`,
-        details: { projectName, subdomain: projectResult?.subdomain, agentName: sanitized, customDomain: body.customDomain },
+        type,
+        ok,
+        summary,
+        details,
       });
-    } catch (err: any) {
-      const msg = String(err?.message ?? err);
-      // If the project already exists, that's fine — we can still attach the domain.
-      if (/already exists|name.*taken|name.*in use/i.test(msg)) {
-        projectCreated = true;
-        try {
-          const existing = await cfFetch(env, request, `/accounts/${accountId}/pages/projects/${projectName}`);
-          projectResult = existing.result;
-        } catch { /* ignore */ }
-      } else {
-        return jsonResp({ error: `Failed to create Pages project ${projectName}: ${msg}` }, 502);
+    };
+
+    // Step 1: create the branch from main (idempotent on "Reference already exists").
+    try {
+      const mainRef: any = await ghAppApi(env, request, `/repos/${env.GH_REPO}/git/ref/heads/main`);
+      const mainSha = mainRef?.object?.sha;
+      if (!mainSha) throw new Error("Could not resolve main branch SHA");
+      try {
+        await ghAppApi(env, request, `/repos/${env.GH_REPO}/git/refs`, {
+          method: "POST",
+          body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: mainSha }),
+        });
+      } catch (err: any) {
+        const msg = String(err?.message ?? err);
+        if (!msg.includes("Reference already exists") && !msg.includes("422")) throw err;
       }
+      pushHistory("branch-create", true, `Created branch ${branch} from main`);
+    } catch (err: any) {
+      pushHistory("branch-create", false, `Failed to create branch: ${err?.message ?? err}`);
+      agent.status = "error";
+      await env.ARTIFACTS.put(`agent:${sanitized}`, JSON.stringify(agent));
+      return jsonResp({ error: `Failed to create branch: ${err?.message ?? err}` }, 502);
     }
 
-    // 2. Attach the user's custom domain to the new project.
-    let domainResult: any = null;
-    let domainAttached = false;
+    // Step 2: commit agent-data/config.json to the branch.
     try {
-      const attach = await cfFetch(env, request, `/accounts/${accountId}/pages/projects/${projectName}/domains`, {
-        method: "POST",
-        body: JSON.stringify({ name: body.customDomain }),
+      const configJson = JSON.stringify({
+        agentName: sanitized,
+        customDomain: body.customDomain,
+        ownerCfAccountId: accountId,
+        createdAt: new Date().toISOString(),
+      }, null, 2);
+      const base64 = btoa(unescape(encodeURIComponent(configJson)));
+      const r: any = await ghAppApi(env, request, `/repos/${env.GH_REPO}/contents/agent-data/config.json`, {
+        method: "PUT",
+        body: JSON.stringify({
+          message: `agent: initialize ${sanitized}`,
+          content: base64,
+          branch,
+        }),
       });
-      domainResult = attach.result;
-      domainAttached = true;
-      await appendHistory(env, {
-        id: `domain-${Date.now()}-${sanitized}`,
-        ts: Date.now(),
-        actor: "user",
-        type: "pages",
-        ok: true,
-        summary: `Attached ${body.customDomain} to ${projectName}`,
-        details: { projectName, domain: body.customDomain, status: domainResult?.status ?? "pending" },
+      pushHistory("config-commit", true, `Committed agent-data/config.json`, { sha: r?.content?.sha });
+    } catch (err: any) {
+      pushHistory("config-commit", false, `Failed to commit config: ${err?.message ?? err}`);
+      agent.status = "error";
+      await env.ARTIFACTS.put(`agent:${sanitized}`, JSON.stringify(agent));
+      return jsonResp({ error: `Branch created, config commit failed: ${err?.message ?? err}` }, 502);
+    }
+
+    // Step 3: create the Pages project bound to the branch.
+    try {
+      const create: any = await cfFetch(env, request, `/accounts/${accountId}/pages/projects`, {
+        method: "POST",
+        body: JSON.stringify({
+          name: projectName,
+          production_branch: branch,
+          build_config: {
+            build_command: "npm run build",
+            destination_dir: "dist",
+            root_dir: "",
+          },
+          source: {
+            type: "github",
+            config: {
+              owner: ghOwner,
+              repo_name: ghRepo,
+              production_branch: branch,
+              build_command: "npm run build",
+              destination_dir: "dist",
+              root_dir: "",
+              deploy_on_push: true,
+            },
+          },
+        }),
+      });
+      agent.pagesProjectId = create?.result?.id;
+      pushHistory("pages-create", true, `Created Pages project ${projectName} bound to ${branch}`, {
+        id: create?.result?.id,
+        subdomain: create?.result?.subdomain,
       });
     } catch (err: any) {
       const msg = String(err?.message ?? err);
+      pushHistory("pages-create", false, `Pages project creation failed: ${msg}`);
+      agent.status = "error";
+      await env.ARTIFACTS.put(`agent:${sanitized}`, JSON.stringify(agent));
       return jsonResp({
-        ok: projectCreated,
-        projectCreated,
-        project: projectResult ? {
-          name: projectName,
-          id: projectResult.id,
-          subdomain: projectResult.subdomain,
-          url: projectResult.subdomain ? `https://${projectResult.subdomain}` : null,
-        } : null,
-        domainAttached: false,
-        error: `Project created but failed to attach ${body.customDomain}: ${msg}`,
+        error: `Branch + config ready, but Pages project creation failed: ${msg}`,
+        hint: "The CF account may need GitHub authorization: dash.cloudflare.com -> Pages -> Settings -> Builds -> Connect to Git.",
+        agent,
       }, 502);
     }
 
+    // Step 4: attach custom domain to the Pages project.
+    try {
+      const attach: any = await cfFetch(env, request, `/accounts/${accountId}/pages/projects/${projectName}/domains`, {
+        method: "POST",
+        body: JSON.stringify({ name: body.customDomain }),
+      });
+      pushHistory("domain-attach", true, `Attached ${body.customDomain}`, { status: attach?.result?.status ?? "pending" });
+    } catch (err: any) {
+      pushHistory("domain-attach", false, `Domain attach failed: ${err?.message ?? err}`);
+    }
+
+    agent.status = "active";
+    await env.ARTIFACTS.put(`agent:${sanitized}`, JSON.stringify(agent));
+    await env.ARTIFACTS.put(`agent-domain:${body.customDomain}`, JSON.stringify({ name: sanitized }));
+    await appendHistory(env, {
+      id: `agent-create-${Date.now()}`,
+      ts: Date.now(),
+      actor: "user",
+      type: "pages",
+      ok: true,
+      summary: `Provisioned agent ${sanitized} (branch ${branch}, project ${projectName}, domain ${body.customDomain})`,
+      details: { agentName: sanitized, branch, projectName, customDomain: body.customDomain },
+    });
+
     return jsonResp({
       ok: true,
-      projectCreated,
-      domainAttached,
-      project: {
-        name: projectName,
-        id: projectResult?.id,
-        subdomain: projectResult?.subdomain,
-        url: projectResult?.subdomain ? `https://${projectResult.subdomain}` : null,
-      },
-      domain: {
-        name: body.customDomain,
-        status: domainResult?.status ?? "initializing",
-        id: domainResult?.id ?? null,
-      },
+      agent,
       url: `https://${body.customDomain}`,
-      agentName: sanitized,
     });
+  }
+
+  // ── /api/cf/deploy/agent/list — list agents owned by the calling CF account
+  if (subpath === "/deploy/agent/list" && method === "GET") {
+    const { accountId } = resolveCfCreds(env, request);
+    const list = await env.ARTIFACTS.list({ prefix: "agent:" });
+    const agents: any[] = [];
+    for await (const k of list.keys) {
+      if (k.name.startsWith("agent-domain:")) continue;
+      const raw = await env.ARTIFACTS.get(k.name);
+      if (!raw) continue;
+      try {
+        const a = JSON.parse(raw);
+        if (!accountId || a.ownerCfAccountId === accountId) agents.push(a);
+      } catch { /* skip */ }
+    }
+    return jsonResp({ agents });
+  }
+
+  // ── /api/cf/deploy/agent/:name — get a single agent record
+  const agentDetailMatch = subpath.match(/^\/deploy\/agent\/([^\/]+)$/);
+  if (agentDetailMatch && method === "GET") {
+    const name = agentDetailMatch[1];
+    const agent = await env.ARTIFACTS.get(`agent:${name}`, { type: "json" });
+    if (!agent) return jsonResp({ error: `Agent '${name}' not found` }, 404);
+    return jsonResp({ agent });
+  }
+
+  // ── /api/cf/deploy/agent/:name/sync — commit files to the agent's branch
+  // Pages auto-deploys on push. Body: { files: [{path, content}], message?: string }
+  const agentSyncMatch = subpath.match(/^\/deploy\/agent\/([^\/]+)\/sync$/);
+  if (agentSyncMatch && method === "POST") {
+    const name = agentSyncMatch[1];
+    const agent = (await env.ARTIFACTS.get(`agent:${name}`, { type: "json" })) as AgentRecord | null;
+    if (!agent) return jsonResp({ error: `Agent '${name}' not found` }, 404);
+    const body = await request.json().catch(() => ({})) as {
+      files?: Array<{ path?: string; content?: string }>;
+      message?: string;
+    };
+    if (!body.files || !Array.isArray(body.files) || body.files.length === 0) {
+      return jsonResp({ error: "files[] is required and must be non-empty" }, 400);
+    }
+    const message = body.message || `agent: sync ${name}`;
+    // Pre-fetch the existing SHAs for each file in parallel.
+    const existingShas: Record<string, string> = {};
+    await Promise.all(body.files.map(async (f) => {
+      if (!f.path) return;
+      try {
+        const e: any = await ghAppApi(env, request, `/repos/${env.GH_REPO}/contents/${encodeURIComponent(f.path)}?ref=${encodeURIComponent(agent.branch)}`);
+        if (e?.sha) existingShas[f.path] = e.sha;
+      } catch { /* new file */ }
+    }));
+    const errors: string[] = [];
+    let lastSha: string | undefined;
+    for (const f of body.files) {
+      if (!f.path || typeof f.content !== "string") {
+        errors.push(`file missing path or content`);
+        continue;
+      }
+      try {
+        const base64 = btoa(unescape(encodeURIComponent(f.content)));
+        const r: any = await ghAppApi(env, request, `/repos/${env.GH_REPO}/contents/${encodeURIComponent(f.path)}`, {
+          method: "PUT",
+          body: JSON.stringify({
+            message,
+            content: base64,
+            branch: agent.branch,
+            sha: existingShas[f.path],
+          }),
+        });
+        if (r?.commit?.sha) lastSha = r.commit.sha;
+        else if (r?.content?.sha) lastSha = r.content.sha;
+      } catch (err: any) {
+        errors.push(`${f.path}: ${err?.message ?? err}`);
+      }
+    }
+    agent.lastSyncedAt = Date.now();
+    if (lastSha) agent.lastCommitSha = lastSha;
+    agent.history.unshift({
+      id: `sync-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      ts: Date.now(),
+      type: "sync",
+      ok: errors.length === 0,
+      summary: errors.length === 0
+        ? `Synced ${body.files.length} file(s) to ${agent.branch} (Pages will redeploy)`
+        : `Sync failed: ${errors.join("; ")}`,
+    });
+    await env.ARTIFACTS.put(`agent:${name}`, JSON.stringify(agent));
+    if (errors.length > 0) {
+      return jsonResp({ ok: false, error: "Some files failed to commit", errors, agent }, 502);
+    }
+    return jsonResp({ ok: true, commitSha: lastSha, branch: agent.branch, fileCount: body.files.length });
+  }
+
+  // ── /api/agent/:name/data — read a file from the agent's branch
+  const agentDataGetMatch = subpath.match(/^\/agent\/([^\/]+)\/data$/);
+  if (agentDataGetMatch && method === "GET") {
+    const name = agentDataGetMatch[1];
+    const agent = (await env.ARTIFACTS.get(`agent:${name}`, { type: "json" })) as AgentRecord | null;
+    if (!agent) return jsonResp({ error: `Agent '${name}' not found` }, 404);
+    const url = new URL(request.url);
+    const path = url.searchParams.get("path") || "";
+    if (!path) return jsonResp({ error: "path query param required (e.g. ?path=agent-data/memories.json)" }, 400);
+    try {
+      const file: any = await ghAppApi(env, request, `/repos/${env.GH_REPO}/contents/${encodeURIComponent(path)}?ref=${encodeURIComponent(agent.branch)}`);
+      if (!file?.content) return jsonResp({ error: `File ${path} not found on ${agent.branch}` }, 404);
+      const content = atob(file.content.replace(/\n/g, ""));
+      return jsonResp({ path, content, sha: file.sha, branch: agent.branch });
+    } catch (err: any) {
+      return jsonResp({ error: `Failed to read ${path}: ${err?.message ?? err}` }, 502);
+    }
+  }
+
+  // ── /api/agent/:name/data — write a single file to the agent's branch
+  if (agentDataGetMatch && method === "PUT") {
+    const name = agentDataGetMatch[1];
+    const agent = (await env.ARTIFACTS.get(`agent:${name}`, { type: "json" })) as AgentRecord | null;
+    if (!agent) return jsonResp({ error: `Agent '${name}' not found` }, 404);
+    const body = await request.json().catch(() => ({})) as { path?: string; content?: string; message?: string };
+    if (!body.path || typeof body.content !== "string") {
+      return jsonResp({ error: "path (string) and content (string) are required" }, 400);
+    }
+    // Look up existing SHA
+    let existingSha: string | undefined;
+    try {
+      const e: any = await ghAppApi(env, request, `/repos/${env.GH_REPO}/contents/${encodeURIComponent(body.path)}?ref=${encodeURIComponent(agent.branch)}`);
+      if (e?.sha) existingSha = e.sha;
+    } catch { /* new file */ }
+    try {
+      const base64 = btoa(unescape(encodeURIComponent(body.content)));
+      const r: any = await ghAppApi(env, request, `/repos/${env.GH_REPO}/contents/${encodeURIComponent(body.path)}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          message: body.message || `agent(${name}): write ${body.path}`,
+          content: base64,
+          branch: agent.branch,
+          sha: existingSha,
+        }),
+      });
+      agent.lastSyncedAt = Date.now();
+      if (r?.commit?.sha) agent.lastCommitSha = r.commit.sha;
+      agent.history.unshift({
+        id: `data-write-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        ts: Date.now(),
+        type: "data-write",
+        ok: true,
+        summary: `Wrote ${body.path} to ${agent.branch}`,
+      });
+      await env.ARTIFACTS.put(`agent:${name}`, JSON.stringify(agent));
+      return jsonResp({ ok: true, path: body.path, sha: r?.content?.sha, commitSha: r?.commit?.sha, branch: agent.branch });
+    } catch (err: any) {
+      return jsonResp({ error: `Failed to write ${body.path}: ${err?.message ?? err}` }, 502);
+    }
   }
 
   // ── /api/cf/history — list of past deploys / stages / PRs

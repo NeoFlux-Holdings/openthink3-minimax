@@ -149,13 +149,15 @@ export const useDeployFlow = () => {
     void loadDomains();
   }, []);
 
-  // Provision a new per-agent Pages project and attach the custom domain.
+  // Provision a new per-agent setup: branch + Pages project + custom domain.
   // Calls the worker's /api/cf/deploy/agent endpoint which:
-  //   1. creates `agent-<name>` Pages project
-  //   2. attaches <customDomain> to it
+  //   1. creates `agent/<name>` branch in the monorepo (from main)
+  //   2. commits agent-data/config.json
+  //   3. creates `agent-<name>` Pages project bound to the branch
+  //   4. attaches <customDomain> to it
   // Returns the resolved agent URL on success.
   const provisionAgent = useEffectEvent(async (agentName: string, customDomain: string): Promise<string | null> => {
-    updateStep('attach', { status: 'running', detail: `Provisioning agent-${agentName}.pages.dev…` });
+    updateStep('attach', { status: 'running', detail: `Provisioning agent/${agentName} on monorepo…` });
     try {
       const custom = localStorage.getItem('openthink_api_url');
       const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
@@ -166,22 +168,24 @@ export const useDeployFlow = () => {
       const res = await fetch(`${apiBase}/api/cf/deploy/agent`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...cfAuthHeaders() },
+        credentials: 'include',
         body: JSON.stringify({ agentName, customDomain }),
       });
       if (!res.ok) {
         const err = await res.text();
-        updateStep('attach', { status: 'error', detail: `Could not provision: ${err}` });
+        let parsed: any = {};
+        try { parsed = JSON.parse(err); } catch { /* keep raw */ }
+        const hint = parsed.hint ? `\n${parsed.hint}` : '';
+        const historyTail = parsed.agent?.history?.slice(0, 3).map((h: any) => `  • ${h.summary}`).join('\n');
+        updateStep('attach', { status: 'error', detail: `Could not provision: ${parsed.error ?? err}${hint}${historyTail ? '\n' + historyTail : ''}` });
         return null;
       }
       const data = await res.json();
-      const pagesUrl = data.project?.url;
-      const finalUrl = data.url || pagesUrl;
-      const detail = data.projectCreated && data.domainAttached
-        ? `Live at ${customDomain} (project ${data.project?.name})`
-        : data.projectCreated
-        ? `Project ${data.project?.name} created; ${customDomain} attaching…`
-        : `Reused project ${data.project?.name}`;
-      updateStep('attach', { status: 'done', detail });
+      const finalUrl = data.url ?? data.agent?.customDomain ? `https://${data.agent.customDomain}` : null;
+      const branch = data.agent?.branch ?? `agent/${agentName}`;
+      const project = data.agent?.pagesProjectName ?? `agent-${agentName}`;
+      updateStep('attach', { status: 'done', detail: `${project} (branch ${branch}) → ${customDomain}` });
+      try { localStorage.setItem('openthink_last_agent', JSON.stringify(data.agent)); } catch { /* ignore */ }
       return finalUrl;
     } catch (err) {
       updateStep('attach', { status: 'error', detail: err instanceof Error ? err.message : String(err) });
