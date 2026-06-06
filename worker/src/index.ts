@@ -786,6 +786,48 @@ export default {
     }
 
     // â”€â”€ Cloudflare artifact sync (/api/cf/*) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    if (url.pathname === "/api/cf/github/platform/setup" && request.method === "POST") {
+      const operatorPat = request.headers.get("X-Operator-Pat");
+      if (!operatorPat) return jsonRespC({ error: "X-Operator-Pat header required (admin:org:read PAT from org owner)" }, 401);
+      const body = await request.json().catch(() => ({})) as { org?: string };
+      const org = body.org || "NeoFlux-Holdings";
+      if (!env.GITHUB_APP_ID || !env.GITHUB_APP_PRIVATE_KEY || !env.GITHUB_INSTALL_TOKEN_KEY) {
+        return jsonRespC({ error: "GITHUB_APP_ID/PRIVATE_KEY/INSTALL_TOKEN_KEY not configured on this worker" }, 503);
+      }
+      const listResp = await fetch(`https://api.github.com/orgs/${encodeURIComponent(org)}/installations`, {
+        headers: { Authorization: `Bearer ${operatorPat}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" },
+      });
+      if (!listResp.ok) {
+        const t = await listResp.text();
+        return jsonRespC({ error: `Failed to list installations: ${listResp.status} ${t.slice(0, 200)}` }, 502);
+      }
+      const list = (await listResp.json()) as any;
+      const installation = (list.installations || []).find((i: any) => String(i.app_id) === String(env.GITHUB_APP_ID));
+      if (!installation) {
+        return jsonRespC({
+          error: `No installation of app ${env.GITHUB_APP_ID} on ${org}. Install at https://github.com/apps/open-think-auth/installations/new first.`,
+        }, 404);
+      }
+      try {
+        const result = await mintAndStorePlatformToken(env, String(installation.id), org);
+        return jsonRespC({ ok: true, installationId: result.id, account: result.account, expiresAt: result.expiresAt });
+      } catch (err: any) {
+        return jsonRespC({ error: `Token mint failed: ${err?.message ?? err}` }, 502);
+      }
+    }
+
+    if (url.pathname === "/api/cf/github/platform/status" && request.method === "GET") {
+      const stored = await env.ARTIFACTS.get(`gh:install:token:${GH_PLATFORM_KEY}`, { type: "json" }) as any | null;
+      if (!stored) return jsonRespC({ configured: false, hint: "Run scripts/setup-gh-platform.mjs to mint the platform token" });
+      return jsonRespC({
+        configured: true,
+        account: stored.account,
+        installationId: stored.id,
+        cachedAt: stored.cachedAt,
+        expiresAt: stored.expiresAt,
+      });
+    }
+
     if (url.pathname.startsWith("/api/cf")) {
       if (request.method === "OPTIONS") {
         return new Response(null, { headers: corsHeadersFor(request) });
@@ -886,6 +928,7 @@ type AgentRecord = {
   cfAccountId: string;
   githubOwner: string;
   githubRepo: string;
+  mode: "platform" | "user";
   createdAt: number;
   lastSyncedAt?: number;
   lastCommitSha?: string;
@@ -1090,7 +1133,42 @@ async function ghAppApi(env: Env, request: Request, path: string, init: RequestI
   if (!stored) {
     throw new Error("github_app_not_installed: visit /github and install the open-think-auth GitHub App on your account");
   }
-  const token = await agentDecryptToken(stored.tokenCiphertext, env.GITHUB_INSTALL_TOKEN_KEY);
+  return ghApiWithToken(env, stored.tokenCiphertext, path, init);
+}
+
+// Platform mode: uses the org-level GitHub App installation token (one-time
+// setup via the GitHub App installed on NeoFlux-Holdings). No user session
+// is required — the worker creates branches and commits on behalf of the
+// platform. The operator installs the App on the org once and the
+// installation.created webhook stores the encrypted token at
+// `gh:install:token:platform`. The default mode for new agents.
+const GH_PLATFORM_KEY = "platform";
+async function ghServiceApi(env: Env, path: string, init: RequestInit = {}): Promise<any> {
+  if (!env.GITHUB_INSTALL_TOKEN_KEY) {
+    throw new Error("GITHUB_INSTALL_TOKEN_KEY not configured on this worker");
+  }
+  const stored = (await env.ARTIFACTS.get(`gh:install:token:${GH_PLATFORM_KEY}`, { type: "json" })) as
+    | { tokenCiphertext: string; id: number; account?: string; cachedAt?: number }
+    | null;
+  if (!stored) {
+    throw new Error(
+      "platform_branch_unavailable: install the open-think-auth GitHub App on NeoFlux-Holdings once and the webhook will store the platform token automatically. See scripts/setup-gh-platform.mjs.",
+    );
+  }
+  return ghApiWithToken(env, stored.tokenCiphertext, path, init);
+}
+
+// Pick the right GH client based on an agent's stored mode. The
+// sync + agent-data endpoints use this so the same code path works
+// for both platform- and user-mode agents.
+function ghApiForAgent(env: Env, request: Request, agent: AgentRecord) {
+  return agent.mode === "user"
+    ? (p: string, i: RequestInit = {}) => ghAppApi(env, request, p, i)
+    : (p: string, i: RequestInit = {}) => ghServiceApi(env, p, i);
+}
+
+async function ghApiWithToken(env: Env, tokenCiphertext: string, path: string, init: RequestInit = {}): Promise<any> {
+  const token = await agentDecryptToken(tokenCiphertext, env.GITHUB_INSTALL_TOKEN_KEY!);
   const url = `https://api.github.com${path}`;
   const r = await fetch(url, {
     ...init,
@@ -1110,6 +1188,95 @@ async function ghAppApi(env: Env, request: Request, path: string, init: RequestI
     throw new Error(`${msg} (${r.status})`);
   }
   return body;
+}
+
+// ── One-shot setup helper: mint a platform installation token directly
+//    (no user install flow). Used by the CLI script (scripts/setup-gh-platform.mjs)
+//    and by the webhook when an installation event lands. The token is
+//    encrypted with GITHUB_INSTALL_TOKEN_KEY and stored at
+//    `gh:install:token:platform` so ghServiceApi() can use it later.
+async function mintAndStorePlatformToken(env: Env, installationId: string, accountLogin?: string): Promise<{ id: number; account: string; expiresAt: string }> {
+  if (!env.GITHUB_APP_ID || !env.GITHUB_APP_PRIVATE_KEY) {
+    throw new Error("GITHUB_APP_ID / GITHUB_APP_PRIVATE_KEY not configured");
+  }
+  if (!env.GITHUB_INSTALL_TOKEN_KEY) {
+    throw new Error("GITHUB_INSTALL_TOKEN_KEY not configured");
+  }
+  // Sign a JWT as the App.
+  const der = pemToDerBytes(env.GITHUB_APP_PRIVATE_KEY);
+  const key = await crypto.subtle.importKey("pkcs8", der, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"]);
+  const now = Math.floor(Date.now() / 1000);
+  const header = b64urlEncode(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+  const payload = b64urlEncode(JSON.stringify({ iat: now - 60, exp: now + 60 * 9, iss: env.GITHUB_APP_ID }));
+  const signingInput = `${header}.${payload}`;
+  const sigBuf = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", key, new TextEncoder().encode(signingInput));
+  const jwt = `${signingInput}.${b64urlEncode(sigBuf)}`;
+  // Exchange JWT + installation_id for an installation access token.
+  const r = await fetch(
+    `https://api.github.com/app/installations/${encodeURIComponent(installationId)}/access_tokens`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${jwt}`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+    },
+  );
+  const data: any = await r.json();
+  if (!r.ok || !data?.token) {
+    throw new Error(`mint installation token failed: ${r.status} ${JSON.stringify(data).slice(0, 300)}`);
+  }
+  // Encrypt + store.
+  const keyBytes = agentHexToBytes(env.GITHUB_INSTALL_TOKEN_KEY);
+  const cryptoKey = await crypto.subtle.importKey("raw", keyBytes, { name: "AES-GCM" }, false, ["encrypt"]);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, cryptoKey, new TextEncoder().encode(data.token));
+  const ivB64 = btoa(String.fromCharCode(...iv));
+  const ctB64 = btoa(String.fromCharCode(...new Uint8Array(ct)));
+  const ciphertext = `${ivB64}:${ctB64}`;
+  const account = accountLogin || data.account?.login || "unknown";
+  await env.ARTIFACTS.put(
+    `gh:install:token:${GH_PLATFORM_KEY}`,
+    JSON.stringify({ id: data.id, account, tokenCiphertext: ciphertext, cachedAt: Date.now(), expiresAt: data.expires_at }),
+  );
+  return { id: data.id, account, expiresAt: data.expires_at };
+}
+
+function b64urlEncode(bytes: ArrayBuffer | Uint8Array | string): string {
+  let bin: string;
+  if (typeof bytes === "string") {
+    bin = bytes;
+  } else {
+    const arr = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    bin = "";
+    for (let i = 0; i < arr.length; i++) bin += String.fromCharCode(arr[i]);
+  }
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function pemToDerBytes(pem: string): Uint8Array {
+  const clean = pem.replace(/-----BEGIN [^-]+-----/g, "").replace(/-----END [^-]+-----/g, "").replace(/\s+/g, "");
+  const bin = atob(clean);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+// Process a GitHub App installation event payload and store the
+// platform token. Idempotent — overwrites the previous token (which is
+// fine; the old one is expired anyway).
+async function handleInstallationEvent(env: Env, payload: any): Promise<{ action: string; stored: boolean; installationId?: number; account?: string }> {
+  if (payload?.action !== "created" && payload?.action !== "reinstalled") {
+    return { action: payload?.action ?? "unknown", stored: false };
+  }
+  const installation = payload.installation;
+  if (!installation?.id) {
+    return { action: payload?.action, stored: false };
+  }
+  const accountLogin: string = installation.account?.login || "unknown";
+  const result = await mintAndStorePlatformToken(env, String(installation.id), accountLogin);
+  return { action: payload.action, stored: true, installationId: result.id, account: result.account };
 }
 
 // â”€â”€ Direct Upload helper: push a set of files to a Pages project â”€â”€â”€â”€â”€â”€
@@ -1541,13 +1708,21 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
   //   5. Store an agent record in KV
   // Pages auto-deploys on every push to the agent's branch.
   if (subpath === "/deploy/agent" && method === "POST") {
-    const body = await request.json().catch(() => ({})) as { agentName?: string; customDomain?: string; force?: boolean };
+    const body = await request.json().catch(() => ({})) as { agentName?: string; customDomain?: string; force?: boolean; mode?: "platform" | "user" };
     if (!body.agentName || typeof body.agentName !== "string") {
       return jsonRespC({ error: "agentName (string) is required" }, 400);
     }
     if (!body.customDomain || typeof body.customDomain !== "string") {
       return jsonRespC({ error: "customDomain (string) is required" }, 400);
     }
+    // Default mode: "platform" — worker uses its own GitHub App installation
+    // on NeoFlux-Holdings. The end user does NOT need to install the App.
+    // "user" mode: advanced users with their own installation can submit
+    // from their own branch.
+    const ghMode: "platform" | "user" = body.mode === "user" ? "user" : "platform";
+    const ghApi = ghMode === "user"
+      ? (p: string, i: RequestInit = {}) => ghAppApi(env, request, p, i)
+      : (p: string, i: RequestInit = {}) => ghServiceApi(env, p, i);
     const { accountId } = resolveCfCreds(env, request);
     if (!accountId) {
       return jsonRespC({ error: "CF account ID required. Set CF_ACCOUNT_ID env var or pass X-CF-Account-Id header." }, 400);
@@ -1584,6 +1759,7 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
       cfAccountId: accountId,
       githubOwner: ghOwner,
       githubRepo: ghRepo,
+      mode: ghMode,
       createdAt: Date.now(),
       status: "creating",
       history: [],
@@ -1601,11 +1777,11 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
 
     // Step 1: create the branch from main (idempotent on "Reference already exists").
     try {
-      const mainRef: any = await ghAppApi(env, request, `/repos/${env.GH_REPO}/git/ref/heads/main`);
+      const mainRef: any = await ghApi(`/repos/${env.GH_REPO}/git/ref/heads/main`);
       const mainSha = mainRef?.object?.sha;
       if (!mainSha) throw new Error("Could not resolve main branch SHA");
       try {
-        await ghAppApi(env, request, `/repos/${env.GH_REPO}/git/refs`, {
+        await ghApi(`/repos/${env.GH_REPO}/git/refs`, {
           method: "POST",
           body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: mainSha }),
         });
@@ -1630,7 +1806,7 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
         createdAt: new Date().toISOString(),
       }, null, 2);
       const base64 = btoa(unescape(encodeURIComponent(configJson)));
-      const r: any = await ghAppApi(env, request, `/repos/${env.GH_REPO}/contents/agent-data/config.json`, {
+      const r: any = await ghApi(`/repos/${env.GH_REPO}/contents/agent-data/config.json`, {
         method: "PUT",
         body: JSON.stringify({
           message: `agent: initialize ${sanitized}`,
@@ -1759,6 +1935,7 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
     const name = agentSyncMatch[1];
     const agent = (await env.ARTIFACTS.get(`agent:${name}`, { type: "json" })) as AgentRecord | null;
     if (!agent) return jsonRespC({ error: `Agent '${name}' not found` }, 404);
+    const ghApi = ghApiForAgent(env, request, agent);
     const body = await request.json().catch(() => ({})) as {
       files?: Array<{ path?: string; content?: string }>;
       message?: string;
@@ -1772,7 +1949,7 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
     await Promise.all(body.files.map(async (f) => {
       if (!f.path) return;
       try {
-        const e: any = await ghAppApi(env, request, `/repos/${env.GH_REPO}/contents/${encodeURIComponent(f.path)}?ref=${encodeURIComponent(agent.branch)}`);
+        const e: any = await ghApi(`/repos/${env.GH_REPO}/contents/${encodeURIComponent(f.path)}?ref=${encodeURIComponent(agent.branch)}`);
         if (e?.sha) existingShas[f.path] = e.sha;
       } catch { /* new file */ }
     }));
@@ -1865,11 +2042,12 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
     const name = agentDataGetMatch[1];
     const agent = (await env.ARTIFACTS.get(`agent:${name}`, { type: "json" })) as AgentRecord | null;
     if (!agent) return jsonRespC({ error: `Agent '${name}' not found` }, 404);
+    const ghApi = ghApiForAgent(env, request, agent);
     const url = new URL(request.url);
     const path = url.searchParams.get("path") || "";
     if (!path) return jsonRespC({ error: "path query param required (e.g. ?path=agent-data/memories.json)" }, 400);
     try {
-      const file: any = await ghAppApi(env, request, `/repos/${env.GH_REPO}/contents/${encodeURIComponent(path)}?ref=${encodeURIComponent(agent.branch)}`);
+      const file: any = await ghApi(`/repos/${env.GH_REPO}/contents/${encodeURIComponent(path)}?ref=${encodeURIComponent(agent.branch)}`);
       if (!file?.content) return jsonRespC({ error: `File ${path} not found on ${agent.branch}` }, 404);
       const content = atob(file.content.replace(/\n/g, ""));
       return jsonRespC({ path, content, sha: file.sha, branch: agent.branch });
@@ -1878,11 +2056,12 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
     }
   }
 
-  // â”€â”€ /api/agent/:name/data â€” write a single file to the agent's branch
+  // ── /api/agent/:name/data — write a single file to the agent's branch
   if (agentDataGetMatch && method === "PUT") {
     const name = agentDataGetMatch[1];
     const agent = (await env.ARTIFACTS.get(`agent:${name}`, { type: "json" })) as AgentRecord | null;
     if (!agent) return jsonRespC({ error: `Agent '${name}' not found` }, 404);
+    const ghApi = ghApiForAgent(env, request, agent);
     const body = await request.json().catch(() => ({})) as { path?: string; content?: string; message?: string };
     if (!body.path || typeof body.content !== "string") {
       return jsonRespC({ error: "path (string) and content (string) are required" }, 400);
@@ -1890,12 +2069,12 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
     // Look up existing SHA
     let existingSha: string | undefined;
     try {
-      const e: any = await ghAppApi(env, request, `/repos/${env.GH_REPO}/contents/${encodeURIComponent(body.path)}?ref=${encodeURIComponent(agent.branch)}`);
+      const e: any = await ghApi(`/repos/${env.GH_REPO}/contents/${encodeURIComponent(body.path)}?ref=${encodeURIComponent(agent.branch)}`);
       if (e?.sha) existingSha = e.sha;
     } catch { /* new file */ }
     try {
       const base64 = btoa(unescape(encodeURIComponent(body.content)));
-      const r: any = await ghAppApi(env, request, `/repos/${env.GH_REPO}/contents/${encodeURIComponent(body.path)}`, {
+      const r: any = await ghApi(`/repos/${env.GH_REPO}/contents/${encodeURIComponent(body.path)}`, {
         method: "PUT",
         body: JSON.stringify({
           message: body.message || `agent(${name}): write ${body.path}`,

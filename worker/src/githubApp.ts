@@ -1,11 +1,11 @@
-// GitHub App installation flow (server-side).
-//   GET  /api/github/install   → 302 to https://github.com/apps/<slug>/installations/new?state=<csrf>
-//   GET  /api/github/callback  → mints installation token, encrypts (AES-GCM), stores in ARTIFACTS
-//   POST /api/github/callback  → returns {ok, user, repos} for the SPA after a redirect-back
-//   GET  /api/github/repos     → lists repos for the current installation
-//   GET  /api/github/status    → {installed, account, repos}
-//   POST /api/github/prs       → creates a branch + commits files + opens a PR
-//   POST /api/github/issues    → posts a comment on an issue/PR
+﻿// GitHub App installation flow (server-side).
+//   GET  /api/github/install   â†’ 302 to https://github.com/apps/<slug>/installations/new?state=<csrf>
+//   GET  /api/github/callback  â†’ mints installation token, encrypts (AES-GCM), stores in ARTIFACTS
+//   POST /api/github/callback  â†’ returns {ok, user, repos} for the SPA after a redirect-back
+//   GET  /api/github/repos     â†’ lists repos for the current installation
+//   GET  /api/github/status    â†’ {installed, account, repos}
+//   POST /api/github/prs       â†’ creates a branch + commits files + opens a PR
+//   POST /api/github/issues    â†’ posts a comment on an issue/PR
 //
 // All endpoints share the CF OAuth session for account_id. The GitHub App
 // installation token is stored at `gh:install:token:<cf_account_id>` and
@@ -1056,7 +1056,72 @@ export async function handleGithubWebhook(request: Request, env: Env): Promise<R
     JSON.stringify({ event: v.event, deliveryId: v.deliveryId, payload: v.payload, receivedAt: Date.now() }),
     { expirationTtl: 60 * 60 * 24 * 30 },
   );
-  return jsonResp({ ok: true, event: v.event, deliveryId: v.deliveryId });
+  // Process installation events for the platform identity. The
+  // operator installs open-think-auth on NeoFlux-Holdings ONCE; this
+  // webhook mints an installation access token, encrypts it with
+  // GITHUB_INSTALL_TOKEN_KEY, and stores it at
+  // `gh:install:token:platform` so ghServiceApi() can use it for
+  // per-agent branch + config commits without requiring the end user
+  // to install the App themselves.
+  let installationResult: { action: string; stored: boolean; installationId?: number; account?: string } | null = null;
+  if (v.event === "installation" && (v.payload as any)?.action && (v.payload as any).installation?.id) {
+    try {
+      const r = await mintAndStorePlatformTokenFromPayload(env, v.payload);
+      installationResult = { action: (v.payload as any).action, stored: true, installationId: r.id, account: r.account };
+    } catch (err: any) {
+      installationResult = { action: (v.payload as any).action, stored: false };
+      console.error("[webhook] platform token mint failed:", err?.message ?? err);
+    }
+  }
+  return jsonResp({ ok: true, event: v.event, deliveryId: v.deliveryId, installation: installationResult });
+}
+
+// Local copies of the helpers from index.ts (the worker bundles them in
+// the same module graph but they're not re-exported). Kept short to
+// avoid pulling in the whole index.ts. The CLI script in
+// scripts/setup-gh-platform.mjs implements the same flow in Node.
+async function mintAndStorePlatformTokenFromPayload(env: Env, payload: any): Promise<{ id: number; account: string; expiresAt: string }> {
+  if (!env.GITHUB_APP_ID || !env.GITHUB_APP_PRIVATE_KEY || !env.GITHUB_INSTALL_TOKEN_KEY) {
+    throw new Error("GITHUB_APP_ID/PRIVATE_KEY/INSTALL_TOKEN_KEY not configured");
+  }
+  const installationId = String(payload.installation.id);
+  // Sign a JWT as the App.
+  const der = pemToDerBytes(env.GITHUB_APP_PRIVATE_KEY);
+  const key = await crypto.subtle.importKey("pkcs8", der, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"]);
+  const now = Math.floor(Date.now() / 1000);
+  const header = b64urlEncode(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+  const jwtPayload = b64urlEncode(JSON.stringify({ iat: now - 60, exp: now + 60 * 9, iss: env.GITHUB_APP_ID }));
+  const signingInput = `${header}.${jwtPayload}`;
+  const sig = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", key, new TextEncoder().encode(signingInput));
+  const jwt = `${signingInput}.${b64urlEncode(sig)}`;
+  const r = await fetch(
+    `https://api.github.com/app/installations/${encodeURIComponent(installationId)}/access_tokens`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${jwt}`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+    },
+  );
+  const data: any = await r.json();
+  if (!r.ok || !data?.token) {
+    throw new Error(`mint installation token failed: ${r.status} ${JSON.stringify(data).slice(0, 300)}`);
+  }
+  const keyBytes = hexToBytes(env.GITHUB_INSTALL_TOKEN_KEY);
+  const ck = await crypto.subtle.importKey("raw", keyBytes, { name: "AES-GCM" }, false, ["encrypt"]);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, ck, new TextEncoder().encode(data.token));
+  const ivB64 = btoa(String.fromCharCode(...iv));
+  const ctB64 = btoa(String.fromCharCode(...new Uint8Array(ct)));
+  const ciphertext = `${ivB64}:${ctB64}`;
+  const account = payload.installation?.account?.login || data.account?.login || "unknown";
+  await env.ARTIFACTS.put(
+    "gh:install:token:platform",
+    JSON.stringify({ id: data.id, account, tokenCiphertext: ciphertext, cachedAt: Date.now(), expiresAt: data.expires_at }),
+  );
+  return { id: data.id, account, expiresAt: data.expires_at };
 }
 
 export async function handleGithubWebhookRecent(
