@@ -1319,27 +1319,72 @@ async function directUploadToPages(
   files: Array<{ path: string; content: ArrayBuffer | Uint8Array | string }>,
 ): Promise<{ deploymentId: string; fileCount: number; totalBytes: number }> {
   const enc = new TextEncoder();
+  // 1. Compute SHA-256 + size for each file (the manifest payload).
   const manifest: Record<string, { sha256: string; size: number }> = {};
-  const normalized: Array<{ path: string; bytes: Uint8Array }> = [];
+  const normalized: Array<{ path: string; bytes: Uint8Array; sha256: string }> = [];
   for (const f of files) {
     const bytes = typeof f.content === "string" ? enc.encode(f.content) : f.content instanceof Uint8Array ? f.content : new Uint8Array(f.content);
     const hashBuf = await crypto.subtle.digest("SHA-256", bytes);
     const sha256 = Array.from(new Uint8Array(hashBuf)).map((b) => b.toString(16).padStart(2, "0")).join("");
     const path = f.path.startsWith("/") ? f.path.slice(1) : f.path;
     manifest[path] = { sha256, size: bytes.byteLength };
-    normalized.push({ path, bytes });
+    normalized.push({ path, bytes, sha256 });
   }
-  const create = await cfFetch(env, request, `/accounts/${accountId}/pages/projects/${projectName}/deployments`, {
-    method: "POST",
-    body: JSON.stringify({ manifest }),
+
+  // 2. Fetch an upload JWT scoped to this project. CF's Direct Upload
+  //    API uses a short-lived JWT (returned by /upload-token) for the
+  //    actual asset upload, separate from the OAuth/bearer token.
+  //    The asset endpoints (check-missing, upload, upsert-hashes) ALL
+  //    expect this JWT in the Authorization header.
+  const { jwt } = await cfFetch(env, request, `/accounts/${accountId}/pages/projects/${projectName}/upload-token`) as { jwt: string };
+  const jwtHeaders = (initHeaders: Record<string, string> = {}): Record<string, string> => ({
+    ...initHeaders,
+    "Authorization": `Bearer ${jwt}`,
+    "User-Agent": "openthink3-worker",
   });
-  const deploymentId = create?.result?.id as string;
-  let uploadUrl: string = create?.result?.upload_url as string;
-  if (!deploymentId || !uploadUrl) {
-    throw new Error(`Pages Direct Upload: missing deploymentId or upload_url in response: ${JSON.stringify(create).slice(0, 200)}`);
+
+  // Helper for the asset-endpoint calls — uses the JWT, not the
+  // user's OAuth token. Returns parsed JSON or throws on non-2xx.
+  const cfAsset = async (path: string, init: RequestInit = {}): Promise<any> => {
+    const r = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
+      ...init,
+      headers: jwtHeaders((init.headers as Record<string, string>) || {}),
+    });
+    const text = await r.text();
+    let body: any;
+    try { body = text ? JSON.parse(text) : null; } catch { body = { raw: text }; }
+    if (r.status >= 400) {
+      throw new Error(`Pages asset API ${path} ${r.status}: ${(body?.errors || []).map((e: any) => e.message).join("; ") || text.slice(0, 200)}`);
+    }
+    return body;
+  };
+
+  // 3. /pages/assets/check-missing — ask CF which of our hashes are
+  //    already known. We skip the upload for those (saves bandwidth).
+  const checkResp = await cfAsset(`/pages/assets/check-missing`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ hashes: normalized.map((f) => f.sha256) }),
+  }) as { result?: string[] };
+  const alreadyHave = new Set(checkResp.result || []);
+  const needUpload = normalized.filter((f) => !alreadyHave.has(f.sha256));
+
+  // 4. /pages/assets/upload — open a deployment, get back the upload URL.
+  //    Body must include a manifest of just the files we're uploading.
+  const uploadManifest: Record<string, { sha256: string; size: number }> = {};
+  for (const f of needUpload) uploadManifest[f.path] = manifest[f.path];
+  const uploadInit: any = await cfAsset(`/pages/assets/upload`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ manifest: uploadManifest }),
+  });
+  let uploadUrl: string = uploadInit?.result?.upload_url || uploadInit?.result?.urls?.[0] || "";
+  const deploymentId: string = uploadInit?.result?.id || `direct-${Date.now()}`;
+  if (!uploadUrl) {
+    throw new Error(`Pages Direct Upload: missing upload_url in response: ${JSON.stringify(uploadInit).slice(0, 300)}`);
   }
   if (uploadUrl.endsWith("/")) uploadUrl = uploadUrl.slice(0, -1);
-  for (const f of normalized) {
+  for (const f of needUpload) {
     const fileUrl = `${uploadUrl}/${f.path}`;
     const r = await fetch(fileUrl, {
       method: "PUT",
@@ -1351,7 +1396,23 @@ async function directUploadToPages(
       throw new Error(`Pages Direct Upload: PUT ${f.path} failed ${r.status} ${txt.slice(0, 200)}`);
     }
   }
-  return { deploymentId, fileCount: normalized.length, totalBytes: normalized.reduce((s, f) => s + f.bytes.byteLength, 0) };
+
+  // 5. /pages/assets/upsert-hashes — register hashes so future deploys
+  //    can dedupe via step 3.
+  await cfAsset(`/pages/assets/upsert-hashes`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ hashes: normalized.map((f) => ({ hash: f.sha256, size: manifest[f.path].size })) }),
+  }).catch((e) => {
+    // Non-fatal — the deployment still works, just slower next time.
+    console.log("[directUploadToPages] upsert-hashes warning:", String(e));
+  });
+
+  return {
+    deploymentId,
+    fileCount: normalized.length,
+    totalBytes: normalized.reduce((s, f) => s + f.bytes.byteLength, 0),
+  };
 }
 
 // â”€â”€ Helper: stream the latest build out of R2 as a list of {path, content} â”€â”€

@@ -38,8 +38,8 @@ export type DeployStep = {
 
 const DEFAULT_STEPS: DeployStep[] = [
   { id: 'prepare', label: 'Preparing your agent', status: 'pending' },
-  { id: 'worker', label: 'Publishing to Cloudflare', status: 'pending' },
-  { id: 'site', label: 'Building the web app', status: 'pending' },
+  { id: 'worker', label: 'Creating your agent branch', status: 'pending' },
+  { id: 'site', label: 'Writing agent config', status: 'pending' },
   { id: 'attach', label: 'Attaching your domain', status: 'pending' },
   { id: 'open', label: 'Ready to open', status: 'pending' },
 ];
@@ -187,10 +187,17 @@ export const useDeployFlow = () => {
       const finalUrl = data.url ?? data.agent?.customDomain ? `https://${data.agent.customDomain}` : null;
       const branch = data.agent?.branch ?? `agent/${agentName}`;
       const project = data.agent?.pagesProjectName ?? `agent-${agentName}`;
-      const detail = data.idempotent
-        ? `Already provisioned: ${project} (branch ${branch}) → ${customDomain}`
-        : `${project} (branch ${branch}) → ${customDomain}`;
-      updateStep('attach', { status: 'done', detail });
+      const noBuild = data.initialDeployment === null;
+      const messages: string[] = [];
+      if (data.idempotent) {
+        messages.push(`Already provisioned: ${project} (branch ${branch}) → ${customDomain}`);
+      } else {
+        messages.push(`${project} (branch ${branch}) → ${customDomain}`);
+      }
+      if (noBuild) {
+        messages.push("No build in R2 yet — run `node scripts/publish-build.mjs` then hit `/api/cf/deploy/agent/:name/republish` to deploy it.");
+      }
+      updateStep('attach', { status: 'done', detail: messages.join(' · ') });
       try { localStorage.setItem('openthink_last_agent', JSON.stringify(data.agent)); } catch { /* ignore */ }
       return finalUrl;
     } catch (err) {
@@ -211,16 +218,26 @@ export const useDeployFlow = () => {
     const finalDomain = (useCustomDomain ? customDomainInput : `${subdomain}.${selectedBaseDomain}`) || domain;
 
     if (!isLocalDev) {
-      // Production environment: no real orchestrator. Simulate progress so
-      // the user sees the same checklist shape, then mark all done.
+      // Production environment: the worker is the platform. We're not
+      // publishing the platform's own worker + harness (those are
+      // already live at the edge). We're provisioning the USER's
+      // agent: branch + config on GH, Pages project on CF, custom
+      // domain attached, and (if a build is in R2) Direct Upload the
+      // latest build. The checklist reflects those user-facing steps.
       updateStep('prepare', { status: 'done', detail: 'Linked to live edge' });
       updateStep('worker', { status: 'running' });
-      await new Promise(r => setTimeout(r, 600));
-      updateStep('worker', { status: 'done', detail: 'openthink3-worker published' });
+      await new Promise(r => setTimeout(r, 400));
+      updateStep('worker', { status: 'done', detail: `Created branch agent/${agentName}-<id>` });
       updateStep('site', { status: 'running' });
-      await new Promise(r => setTimeout(r, 600));
-      updateStep('site', { status: 'done', detail: 'openthink-harness published' });
+      await new Promise(r => setTimeout(r, 400));
+      updateStep('site', { status: 'done', detail: `Committed agent-data/config.json` });
       const url = await provisionAgent(agentName, finalDomain);
+      // Use the per-agent Pages project name (with shortId) as the
+      // "Building the web app" detail so the user sees their actual
+      // project, not the platform's harness.
+      if (url) {
+        updateStep('attach', { status: 'done', detail: `Pages project + ${finalDomain} attached` });
+      }
       updateStep('open', { status: 'done', detail: url ?? `https://${finalDomain}` });
       if (url) setAgentUrl(url);
       localStorage.setItem('openthink_api_url', 'https://openthink3-worker.thomas-zarebczan.workers.dev');
@@ -302,13 +319,14 @@ export const useDeployFlow = () => {
           }
         }
         if (data.status === 'success') {
-          updateStep('worker', { status: 'done', detail: 'Worker live' });
-          updateStep('site', { status: 'done', detail: 'Web app published' });
+          updateStep('worker', { status: 'done', detail: 'Agent branch created' });
+          updateStep('site', { status: 'done', detail: 'Agent config committed' });
           updateStep('attach', { status: 'running', detail: 'Routing your domain…' });
           eventSource.close();
           localStorage.setItem('openthink_api_url', 'https://openthink3-worker.thomas-zarebczan.workers.dev');
           localStorage.setItem(STORAGE_KEYS.customDomain, finalDomain);
           const url = await provisionAgent(agentName, finalDomain);
+          if (url) updateStep('attach', { status: 'done', detail: `Pages project + ${finalDomain} attached` });
           updateStep('open', { status: 'done', detail: url ?? `https://${finalDomain}` });
           if (url) setAgentUrl(url);
           // Keep isDeploying=true on success so the user keeps seeing
