@@ -1286,6 +1286,28 @@ function randomShortId(len = 8): string {
   return out;
 }
 
+// Quick content-type guesser for the Pages Direct Upload metadata.
+// CF's /pages/assets/upload endpoint requires metadata.contentType on
+// every entry; missing it returns 500. The Vite build emits well-known
+// extensions so this string-match covers the SPA assets.
+function guessContentType(path: string): string {
+  if (path.endsWith(".html")) return "text/html; charset=utf-8";
+  if (path.endsWith(".js") || path.endsWith(".mjs")) return "application/javascript; charset=utf-8";
+  if (path.endsWith(".css")) return "text/css; charset=utf-8";
+  if (path.endsWith(".json")) return "application/json; charset=utf-8";
+  if (path.endsWith(".svg")) return "image/svg+xml";
+  if (path.endsWith(".png")) return "image/png";
+  if (path.endsWith(".jpg") || path.endsWith(".jpeg")) return "image/jpeg";
+  if (path.endsWith(".webp")) return "image/webp";
+  if (path.endsWith(".ico")) return "image/x-icon";
+  if (path.endsWith(".woff")) return "font/woff";
+  if (path.endsWith(".woff2")) return "font/woff2";
+  if (path.endsWith(".ttf")) return "font/ttf";
+  if (path.endsWith(".txt")) return "text/plain; charset=utf-8";
+  if (path.endsWith(".webmanifest") || path.endsWith(".manifest")) return "application/manifest+json";
+  return "application/octet-stream";
+}
+
 function pemToDerBytes(pem: string): Uint8Array {
   const clean = pem.replace(/-----BEGIN [^-]+-----/g, "").replace(/-----END [^-]+-----/g, "").replace(/\s+/g, "");
   const bin = atob(clean);
@@ -1336,7 +1358,13 @@ async function directUploadToPages(
   //    actual asset upload, separate from the OAuth/bearer token.
   //    The asset endpoints (check-missing, upload, upsert-hashes) ALL
   //    expect this JWT in the Authorization header.
-  const { jwt } = await cfFetch(env, request, `/accounts/${accountId}/pages/projects/${projectName}/upload-token`) as { jwt: string };
+  //    cfFetch returns the full { success, result } envelope, so we
+  //    pull .result.jwt out.
+  const tokenResp: any = await cfFetch(env, request, `/accounts/${accountId}/pages/projects/${projectName}/upload-token`);
+  const jwt: string = tokenResp?.result?.jwt;
+  if (!jwt) {
+    throw new Error(`Pages Direct Upload: /upload-token returned no jwt: ${JSON.stringify(tokenResp).slice(0, 300)}`);
+  }
   const jwtHeaders = (initHeaders: Record<string, string> = {}): Record<string, string> => ({
     ...initHeaders,
     "Authorization": `Bearer ${jwt}`,
@@ -1346,9 +1374,10 @@ async function directUploadToPages(
   // Helper for the asset-endpoint calls — uses the JWT, not the
   // user's OAuth token. Returns parsed JSON or throws on non-2xx.
   const cfAsset = async (path: string, init: RequestInit = {}): Promise<any> => {
+    const headers = jwtHeaders((init.headers as Record<string, string>) || {});
     const r = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
       ...init,
-      headers: jwtHeaders((init.headers as Record<string, string>) || {}),
+      headers,
     });
     const text = await r.text();
     let body: any;
@@ -1369,32 +1398,43 @@ async function directUploadToPages(
   const alreadyHave = new Set(checkResp.result || []);
   const needUpload = normalized.filter((f) => !alreadyHave.has(f.sha256));
 
-  // 4. /pages/assets/upload — open a deployment, get back the upload URL.
-  //    Body must include a manifest of just the files we're uploading.
-  const uploadManifest: Record<string, { sha256: string; size: number }> = {};
-  for (const f of needUpload) uploadManifest[f.path] = manifest[f.path];
-  const uploadInit: any = await cfAsset(`/pages/assets/upload`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ manifest: uploadManifest }),
-  });
-  let uploadUrl: string = uploadInit?.result?.upload_url || uploadInit?.result?.urls?.[0] || "";
-  const deploymentId: string = uploadInit?.result?.id || `direct-${Date.now()}`;
-  if (!uploadUrl) {
-    throw new Error(`Pages Direct Upload: missing upload_url in response: ${JSON.stringify(uploadInit).slice(0, 300)}`);
-  }
-  if (uploadUrl.endsWith("/")) uploadUrl = uploadUrl.slice(0, -1);
-  for (const f of needUpload) {
-    const fileUrl = `${uploadUrl}/${f.path}`;
-    const r = await fetch(fileUrl, {
-      method: "PUT",
-      body: f.bytes,
-      headers: { "Content-Type": "application/octet-stream" },
+  // 4. /pages/assets/upload — POST the files as a single JSON array.
+  //    Each entry is { key: <sha256>, value: <base64-content>,
+  //                    metadata: { contentType }, base64: true }.
+  //    The endpoint returns { result: { successful_key_count,
+  //    unsuccessful_keys, urls, deployment_id } }.
+  //    urls[] is non-empty only for files that exceeded the in-body
+  //    size limit and need a presigned PUT URL. For a normal SPA
+  //    build (sub-MB JS/CSS) the in-body upload is sufficient.
+  const deploymentId = `direct-${Date.now()}`;
+  if (needUpload.length > 0) {
+    const payload = needUpload.map((f) => ({
+      key: f.sha256,
+      value: btoa(String.fromCharCode(...f.bytes)),
+      metadata: { contentType: guessContentType(f.path) },
+      base64: true,
+    }));
+    const uploadInit: any = await cfAsset(`/pages/assets/upload`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
     });
-    if (!r.ok) {
-      const txt = await r.text().catch(() => "");
-      throw new Error(`Pages Direct Upload: PUT ${f.path} failed ${r.status} ${txt.slice(0, 200)}`);
+    const presignedUrls: string[] = uploadInit?.result?.urls || [];
+    for (let i = 0; i < needUpload.length && i < presignedUrls.length; i++) {
+      const f = needUpload[i];
+      const u = presignedUrls[i];
+      const r = await fetch(u, {
+        method: "PUT",
+        body: f.bytes,
+        headers: { "Content-Type": "application/octet-stream" },
+      });
+      if (!r.ok) {
+        const txt = await r.text().catch(() => "");
+        throw new Error(`Pages Direct Upload: PUT ${f.path} failed ${r.status} ${txt.slice(0, 200)}`);
+      }
     }
+  } else {
+    console.log("[directUploadToPages] all", normalized.length, "files already in CF cache; skipping upload");
   }
 
   // 5. /pages/assets/upsert-hashes — register hashes so future deploys
@@ -1431,6 +1471,48 @@ async function readLatestBuildFromR2(env: Env): Promise<Array<{ path: string; co
   }
   if (out.length === 0) {
     throw new Error("No build found in R2 at builds/latest/. POST a build to /api/cf/agent/publish-build first.");
+  }
+  return out;
+}
+
+// ── Helper: fetch the canonical dist/ from the platform's GH repo (openthink3-minimax).
+// This is the "one-click deploy" path — the user clicks Deploy in the SPA
+// and the worker fetches the dist from the GH repo, then Direct
+// Uploads it to the new agent's Pages project. No CLI / no
+// R2 step required for the default flow.
+async function fetchCanonicalBuildFromGH(env: Env, ghApi: (p: string, i?: RequestInit) => Promise<any>): Promise<Array<{ path: string; content: ArrayBuffer }>> {
+  if (!env.GH_REPO) throw new Error("GH_REPO var is not configured");
+  const [ghOwner, ghRepo] = env.GH_REPO.split("/");
+  if (!ghOwner || !ghRepo) throw new Error(`GH_REPO format invalid: ${env.GH_REPO}`);
+  // Use the Git Trees API (recursive) for a single round-trip listing.
+  let tree: any;
+  try {
+    tree = await ghApi(`/repos/${ghOwner}/${ghRepo}/git/trees/HEAD?recursive=1`);
+  } catch (err: any) {
+    throw new Error(`Failed to list GH tree for ${ghOwner}/${ghRepo}: ${err?.message ?? err}`);
+  }
+  if (!tree?.tree || !Array.isArray(tree.tree)) {
+    throw new Error(`Invalid tree response from GH: ${JSON.stringify(tree).slice(0, 200)}`);
+  }
+  const distEntries = tree.tree
+    .filter((e: any) => e.type === "blob" && typeof e.path === "string" && e.path.startsWith("dist/"))
+    .filter((e: any) => !e.path.endsWith("/_manifest.json"));
+  if (distEntries.length === 0) {
+    throw new Error(`No dist/ files found in ${ghOwner}/${ghRepo} main branch. Commit a dist/ first.`);
+  }
+  // Fetch each blob. GH returns base64-encoded content.
+  const out: Array<{ path: string; content: ArrayBuffer }> = [];
+  for (const entry of distEntries) {
+    const path = entry.path.replace(/^dist\//, "");
+    const blob: any = await ghApi(`/repos/${ghOwner}/${ghRepo}/git/blobs/${entry.sha}`);
+    if (!blob?.content) continue;
+    const bytes = blob.encoding === "base64"
+      ? Uint8Array.from(atob(blob.content.replace(/\n/g, "")), (c) => c.charCodeAt(0))
+      : new TextEncoder().encode(blob.content);
+    // Copy into a fresh ArrayBuffer (slice() may return SharedArrayBuffer in workers).
+    const ab = new ArrayBuffer(bytes.byteLength);
+    new Uint8Array(ab).set(bytes);
+    out.push({ path, content: ab });
   }
   return out;
 }
@@ -2024,24 +2106,34 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
       }, 502);
     }
 
-    // Step 3b: Direct Upload the latest R2 build to the new Pages project.
+    // Step 3b: Direct Upload the canonical build to the new Pages project.
     // This is what actually makes the agent live at <project>.pages.dev.
+    // We try (in order):
+    //   1. R2 `builds/latest/*` (custom build published via /publish-build)
+    //   2. GitHub `dist/` on the platform repo (canonical fallback — one-click deploy)
     let initialDeployment: { deploymentId: string; fileCount: number; totalBytes: number } | null = null;
-    if (env.AGENT_BUILDS) {
-      try {
-        const buildFiles = await readLatestBuildFromR2(env);
-        initialDeployment = await directUploadToPages(env, request, accountId, projectName, buildFiles);
-        pushHistory("pages-deploy", true,
-          `Direct Uploaded ${initialDeployment.fileCount} files (${initialDeployment.totalBytes} bytes)`,
-          { deploymentId: initialDeployment.deploymentId });
-      } catch (err: any) {
-        const msg = String(err?.message ?? err);
-        pushHistory("pages-deploy", false, `Initial Direct Upload failed: ${msg}`);
-        // Don't bail â€” the project is created and the branch has config.
-        // The user can re-publish via /api/cf/deploy/agent/:name/republish.
+    let buildSource: "r2" | "github" | null = null;
+    try {
+      let buildFiles: Array<{ path: string; content: ArrayBuffer }> | null = null;
+      if (env.AGENT_BUILDS) {
+        try {
+          buildFiles = await readLatestBuildFromR2(env);
+          buildSource = "r2";
+        } catch { /* fall through to GH */ }
       }
-    } else {
-      pushHistory("pages-deploy", false, "AGENT_BUILDS R2 bucket not configured â€” skipped initial deploy");
+      if (!buildFiles) {
+        buildFiles = await fetchCanonicalBuildFromGH(env, ghApi);
+        buildSource = "github";
+      }
+      initialDeployment = await directUploadToPages(env, request, accountId, projectName, buildFiles);
+      pushHistory("pages-deploy", true,
+        `Direct Uploaded ${initialDeployment.fileCount} files (${initialDeployment.totalBytes} bytes) from ${buildSource}`,
+        { deploymentId: initialDeployment.deploymentId, source: buildSource });
+    } catch (err: any) {
+      const msg = String(err?.message ?? err);
+      pushHistory("pages-deploy", false, `Initial Direct Upload failed: ${msg}`);
+    // Don't bail — the project is created and the branch has config.
+    // The user can re-publish via /api/cf/deploy/agent/:name/republish.
     }
 
     // Step 4: attach custom domain to the Pages project.
@@ -2184,7 +2276,16 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
     }
     if (!env.AGENT_BUILDS) return jsonRespC({ error: "AGENT_BUILDS R2 bucket not configured" }, 503);
     try {
-      const buildFiles = await readLatestBuildFromR2(env);
+      // Try R2 first, fall back to the canonical GH dist.
+      let buildFiles: Array<{ path: string; content: ArrayBuffer }>;
+      let buildSource: "r2" | "github";
+      try {
+        buildFiles = await readLatestBuildFromR2(env);
+        buildSource = "r2";
+      } catch {
+        buildFiles = await fetchCanonicalBuildFromGH(env, (p, i) => ghApiForAgent(env, request, agent)(p, i));
+        buildSource = "github";
+      }
       const deploy = await directUploadToPages(env, request, accountId, agent.pagesProjectName, buildFiles);
       agent.lastSyncedAt = Date.now();
       agent.history.unshift({
