@@ -833,45 +833,7 @@ export default {
       });
     }
 
-    // Debug: use the platform token to call /installation/repositories
-    // and show the response (so we can see what GitHub actually returns).
-    if (url.pathname === "/api/cf/github/platform/debug" && request.method === "GET") {
-      const stored = await env.ARTIFACTS.get(`gh:install:token:${GH_PLATFORM_KEY}`, { type: "json" }) as any | null;
-      if (!stored) return jsonRespC({ error: "platform token not configured" }, 404);
-      try {
-        const token = await agentDecryptToken(stored.tokenCiphertext, env.GITHUB_INSTALL_TOKEN_KEY!);
-        const r1 = await fetch("https://api.github.com/installation/repositories?per_page=10", {
-          headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "openthink3-worker" },
-        });
-        const t1 = await r1.text();
-        const r2 = await fetch("https://api.github.com/repos/NeoFlux-Holdings/openthink3-minimax", {
-          headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "User-Agent": "openthink3-worker" },
-        });
-        const t2 = await r2.text();
-        const r3 = await fetch("https://api.github.com/repos/NeoFlux-Holdings/openthink3-minimax/git/ref/heads/master", {
-          headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "User-Agent": "openthink3-worker" },
-        });
-        const t3 = await r3.text();
-        // Probe a write op (just check rate-limit headers — no actual create).
-        // Then check the token's own rate limit + scope via X-OAuth-Scopes
-        // (won't be present for installation tokens, but we can see headers).
-        const r4 = await fetch("https://api.github.com/repos/NeoFlux-Holdings/openthink3-minimax/contents/probe.txt?ref=master", {
-          method: "PUT",
-          headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "Content-Type": "application/json", "User-Agent": "openthink3-worker" },
-          body: JSON.stringify({ message: "probe (will fail)", content: btoa("probe") }),
-        });
-        const t4 = await r4.text();
-        return jsonRespC({
-          installation: { id: stored.id, account: stored.account, expiresAt: stored.expiresAt },
-          listRepos: { status: r1.status, body: t1.slice(0, 800) },
-          getRepo: { status: r2.status, body: t2.slice(0, 600) },
-          getRef: { status: r3.status, body: t3.slice(0, 600) },
-          putProbe: { status: r4.status, body: t4.slice(0, 600) },
-        });
-      } catch (err: any) {
-        return jsonRespC({ error: err?.message ?? String(err) }, 500);
-      }
-    }
+
 
     if (url.pathname.startsWith("/api/cf")) {
       if (request.method === "OPTIONS") {
@@ -965,6 +927,7 @@ type HistoryEntry = {
 
 type AgentRecord = {
   name: string;
+  shortId: string;
   branch: string;
   pagesProjectName: string;
   pagesProjectId?: string;
@@ -1307,6 +1270,20 @@ function b64urlEncode(bytes: ArrayBuffer | Uint8Array | string): string {
     for (let i = 0; i < arr.length; i++) bin += String.fromCharCode(arr[i]);
   }
   return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+// Short alphanumeric ID (8 chars, base36) used to disambiguate
+// globally-unique branch / Pages project names on GitHub + Cloudflare.
+// Multiple CF accounts can pick the same friendly "agentName" without
+// colliding on shared org-level resources because the shortId makes the
+// underlying branch + project names unique.
+function randomShortId(len = 8): string {
+  const bytes = new Uint8Array(len);
+  crypto.getRandomValues(bytes);
+  const alphabet = "0123456789abcdefghijklmnopqrstuvwxyz";
+  let out = "";
+  for (let i = 0; i < len; i++) out += alphabet[bytes[i] % alphabet.length];
+  return out;
 }
 
 function pemToDerBytes(pem: string): Uint8Array {
@@ -1786,26 +1763,66 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
     if (!sanitized) {
       return jsonRespC({ error: "agentName produced an empty branch name (use letters, numbers, or hyphens)" }, 400);
     }
-    const branch = `agent/${sanitized}`;
-    const projectName = `agent-${sanitized}`;
+    // Per-CF-account check: the user-friendly agent name is scoped to
+    // their CF account (so two different users can both pick
+    // "agent-orange-0" without colliding on each other's records).
+    // The branch + Pages project names get a shortId suffix so the
+    // underlying GitHub + Cloudflare resources are globally unique.
     const existing = (await env.ARTIFACTS.get(`agent:${sanitized}`, { type: "json" })) as AgentRecord | null;
     if (existing) {
       // Allow retry when the previous attempt errored (e.g. user wasn't
-      // signed in to the GitHub App yet). Only block when the agent is
-      // active — that's a real collision.
+      // signed in to the GitHub App yet, or the underlying branch +
+      // Pages project were deleted out-of-band from the web UI). Only
+      // block when the agent is active AND the underlying resources
+      // are still present (checked best-effort via the Pages API).
       if (existing.status === "error" || body.force) {
         await env.ARTIFACTS.delete(`agent:${sanitized}`);
         await env.ARTIFACTS.delete(`agent-domain:${existing.customDomain}`);
       } else {
-        return jsonRespC({
-          error: `Agent '${sanitized}' already exists and is active. Pass force: true to recreate it.`,
-          agent: existing,
-        }, 409);
+        // Try to confirm the Pages project still exists; if not, this
+        // is a stale record (user deleted from the web) — auto-recover.
+        let pagesGone = false;
+        try {
+          await cfFetch(env, request, `/accounts/${accountId}/pages/projects/${existing.pagesProjectName}`);
+        } catch (err: any) {
+          if (String(err?.message ?? err).includes("(404)")) {
+            pagesGone = true;
+          }
+        }
+        if (pagesGone || body.force) {
+          await env.ARTIFACTS.delete(`agent:${sanitized}`);
+          await env.ARTIFACTS.delete(`agent-domain:${existing.customDomain}`);
+        } else {
+          return jsonRespC({
+            error: `Agent '${sanitized}' already exists and is active. Pass force: true to recreate it.`,
+            agent: existing,
+            hint: `Or use a different name — branches are scoped per CF account, but the underlying GitHub branch + Pages project get a unique shortId suffix.`,
+          }, 409);
+        }
       }
     }
+    // Generate a short random ID for global uniqueness on GH + CF.
+    // Re-roll if we somehow collide (extremely unlikely with 36^8).
+    let shortId = randomShortId(8);
     const [ghOwner, ghRepo] = env.GH_REPO.split("/");
+    // Probe the branch ref to make sure it doesn't exist yet.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await ghApi(`/repos/${env.GH_REPO}/git/ref/heads/agent/${sanitized}-${shortId}`);
+        // If no throw, the branch already exists — re-roll.
+        shortId = randomShortId(8);
+      } catch (err: any) {
+        const msg = String(err?.message ?? err);
+        if (msg.includes("404")) break; // branch doesn't exist — good
+        // Anything else: re-roll and try again.
+        shortId = randomShortId(8);
+      }
+    }
+    const branch = `agent/${sanitized}-${shortId}`;
+    const projectName = `agent-${sanitized}-${shortId}`;
     const agent: AgentRecord = {
       name: sanitized,
+      shortId,
       branch,
       pagesProjectName: projectName,
       customDomain: body.customDomain,
@@ -2118,7 +2135,43 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
     }
   }
 
-  // â”€â”€ /api/agent/:name/data â€” read a file from the agent's branch
+  // ── /api/cf/deploy/agent/:name — DELETE: clean up an agent's KV record
+  //     and (best-effort) the underlying branch + Pages project. Used
+  //     when the user nukes from the web and wants to start fresh, or
+  //     when an errored record needs purging.
+  const agentDeleteMatch = subpath.match(/^\/deploy\/agent\/([^\/]+)$/);
+  if (agentDeleteMatch && method === "DELETE") {
+    const name = agentDeleteMatch[1];
+    const agent = (await env.ARTIFACTS.get(`agent:${name}`, { type: "json" })) as AgentRecord | null;
+    if (!agent) return jsonRespC({ error: `Agent '${name}' not found` }, 404);
+    const { accountId } = resolveCfCreds(env, request);
+    if (!accountId) {
+      return jsonRespC({ error: "CF account ID required" }, 400);
+    }
+    const results: any = { kv: true, github: null, pages: null };
+    // Best-effort: delete the branch on GH.
+    try {
+      await ghApiForAgent(env, request, agent)(`/repos/${env.GH_REPO}/git/refs/heads/${agent.branch}`, { method: "DELETE" });
+      results.github = "deleted";
+    } catch (err: any) {
+      results.github = `failed: ${err?.message ?? err}`;
+    }
+    // Best-effort: delete the Pages project.
+    try {
+      await cfFetch(env, request, `/accounts/${accountId}/pages/projects/${agent.pagesProjectName}`, { method: "DELETE" });
+      results.pages = "deleted";
+    } catch (err: any) {
+      results.pages = `failed: ${err?.message ?? err}`;
+    }
+    // Always remove the KV record (the user's intent).
+    await env.ARTIFACTS.delete(`agent:${name}`);
+    if (agent.customDomain) {
+      await env.ARTIFACTS.delete(`agent-domain:${agent.customDomain}`);
+    }
+    return jsonRespC({ ok: true, name, results });
+  }
+
+  // ── /api/agent/:name/data — read a file from the agent's branch
   const agentDataGetMatch = subpath.match(/^\/agent\/([^\/]+)\/data$/);
   if (agentDataGetMatch && method === "GET") {
     const name = agentDataGetMatch[1];
