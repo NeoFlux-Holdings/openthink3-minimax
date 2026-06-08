@@ -334,23 +334,41 @@ export async function handleGithubCallback(
     }
     const url = new URL(request.url);
     const installationId = url.searchParams.get("installation_id");
-    const state = url.searchParams.get("state");
-    if (!installationId || !state) {
-      return jsonResp({ error: "invalid_callback", description: "Missing installation_id or state" }, 400);
+    let state = url.searchParams.get("state");
+    if (!installationId) {
+      return jsonResp({ error: "invalid_callback", description: "Missing installation_id" }, 400);
     }
-    const pendingRaw = await env.ARTIFACTS.get(`gh:install:${state}`);
-    if (!pendingRaw) {
-      return jsonResp({ error: "state_expired", description: "Installation flow expired. Please retry." }, 400);
+    // State is optional now. If it's missing, the user may have navigated
+    // directly to github.com/apps/open-think-auth/installations/new (e.g.
+    // via a stale link or a bookmark). We can still complete the install
+    // as long as they have an active CF OAuth session — we just use a
+    // default redirect target.
+    let redirectBack = "/github";
+    if (state) {
+      const pendingRaw = await env.ARTIFACTS.get(`gh:install:${state}`);
+      if (pendingRaw) {
+        try {
+          const pending = JSON.parse(pendingRaw) as { redirectBack?: string; createdAt?: number };
+          if (pending.redirectBack) redirectBack = pending.redirectBack;
+        } catch { /* keep default */ }
+      }
+      // State is now consumed.
+      await env.ARTIFACTS.delete(`gh:install:${state}`);
+    } else {
+      // Synthesize a state so the URL after redirect still includes one
+      // (the SPA uses it to know the install just completed).
+      state = randomState();
     }
-    let pending: { redirectBack: string; createdAt: number };
-    try { pending = JSON.parse(pendingRaw); } catch { pending = { redirectBack: "/github", createdAt: 0 }; }
     const session = await readSession(request, env);
     const key = accountKey(session);
     if (!key) {
-      return jsonResp(
-        { error: "no_session", description: "Sign in to your OpenThink agent before installing the GitHub App." },
-        401,
-      );
+      // If no session, send the user to a friendly error page on the SPA
+      // instead of an opaque JSON 401. The page can prompt them to sign in
+      // and re-install.
+      const errPath = env.GITHUB_OAUTH_ERROR_URL
+        || `${new URL(request.url).origin}/oauth/github/errors`;
+      const target = `${errPath}?error=no_session&error_description=${encodeURIComponent("Sign in to your OpenThink account before installing the GitHub App.")}&installation_id=${encodeURIComponent(installationId)}`;
+      return redirectTo(target);
     }
     let minted: Awaited<ReturnType<typeof mintInstallationToken>>;
     try {
@@ -367,8 +385,7 @@ export async function handleGithubCallback(
       cachedAt: Date.now(),
     };
     await env.ARTIFACTS.put(`gh:install:token:${key}`, JSON.stringify(info));
-    await env.ARTIFACTS.delete(`gh:install:${state}`);
-    const target = `${pending.redirectBack || "/github"}?installation_id=${encodeURIComponent(installationId)}&state=${encodeURIComponent(state)}`;
+    const target = `${redirectBack}?installation_id=${encodeURIComponent(installationId)}&state=${encodeURIComponent(state!)}`;
     return redirectTo(target);
   }
 
