@@ -833,6 +833,46 @@ export default {
       });
     }
 
+    // Debug: use the platform token to call /installation/repositories
+    // and show the response (so we can see what GitHub actually returns).
+    if (url.pathname === "/api/cf/github/platform/debug" && request.method === "GET") {
+      const stored = await env.ARTIFACTS.get(`gh:install:token:${GH_PLATFORM_KEY}`, { type: "json" }) as any | null;
+      if (!stored) return jsonRespC({ error: "platform token not configured" }, 404);
+      try {
+        const token = await agentDecryptToken(stored.tokenCiphertext, env.GITHUB_INSTALL_TOKEN_KEY!);
+        const r1 = await fetch("https://api.github.com/installation/repositories?per_page=10", {
+          headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "openthink3-worker" },
+        });
+        const t1 = await r1.text();
+        const r2 = await fetch("https://api.github.com/repos/NeoFlux-Holdings/openthink3-minimax", {
+          headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "User-Agent": "openthink3-worker" },
+        });
+        const t2 = await r2.text();
+        const r3 = await fetch("https://api.github.com/repos/NeoFlux-Holdings/openthink3-minimax/git/ref/heads/master", {
+          headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "User-Agent": "openthink3-worker" },
+        });
+        const t3 = await r3.text();
+        // Probe a write op (just check rate-limit headers — no actual create).
+        // Then check the token's own rate limit + scope via X-OAuth-Scopes
+        // (won't be present for installation tokens, but we can see headers).
+        const r4 = await fetch("https://api.github.com/repos/NeoFlux-Holdings/openthink3-minimax/contents/probe.txt?ref=master", {
+          method: "PUT",
+          headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "Content-Type": "application/json", "User-Agent": "openthink3-worker" },
+          body: JSON.stringify({ message: "probe (will fail)", content: btoa("probe") }),
+        });
+        const t4 = await r4.text();
+        return jsonRespC({
+          installation: { id: stored.id, account: stored.account, expiresAt: stored.expiresAt },
+          listRepos: { status: r1.status, body: t1.slice(0, 800) },
+          getRepo: { status: r2.status, body: t2.slice(0, 600) },
+          getRef: { status: r3.status, body: t3.slice(0, 600) },
+          putProbe: { status: r4.status, body: t4.slice(0, 600) },
+        });
+      } catch (err: any) {
+        return jsonRespC({ error: err?.message ?? String(err) }, 500);
+      }
+    }
+
     if (url.pathname.startsWith("/api/cf")) {
       if (request.method === "OPTIONS") {
         return new Response(null, { headers: corsHeadersFor(request) });
@@ -1182,6 +1222,7 @@ async function ghApiWithToken(env: Env, tokenCiphertext: string, path: string, i
       "Authorization": `Bearer ${token}`,
       "Accept": "application/vnd.github+json",
       "X-GitHub-Api-Version": "2022-11-28",
+      "User-Agent": "openthink3-worker",
       "Content-Type": "application/json",
     },
   });
@@ -1190,8 +1231,11 @@ async function ghApiWithToken(env: Env, tokenCiphertext: string, path: string, i
   try { body = text ? JSON.parse(text) : null; } catch { body = { raw: text }; }
   if (r.status >= 400) {
     const msg = body?.message || `GitHub API ${r.status}`;
+    const errBody = text ? text.slice(0, 600) : "(empty)";
+    console.log("[ghAppApi] error", { path, method: init.method || "GET", status: r.status, msg, errBody });
     throw new Error(`${msg} (${r.status})`);
   }
+  console.log("[ghAppApi] ok", { path, method: init.method || "GET", status: r.status });
   return body;
 }
 
@@ -1785,21 +1829,40 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
       });
     };
 
-    // Step 1: create the branch from main (idempotent on "Reference already exists").
+    // Step 1: create the branch from the repo's default branch
+    // (idempotent on "Reference already exists"). Resolve the default
+    // branch dynamically — many repos still use "master" instead of
+    // "main" and hardcoding one would 404 the other.
     try {
-      const mainRef: any = await ghApi(`/repos/${env.GH_REPO}/git/ref/heads/main`);
-      const mainSha = mainRef?.object?.sha;
-      if (!mainSha) throw new Error("Could not resolve main branch SHA");
+      // First try the repo's declared default branch.
+      const repoInfo: any = await ghApi(`/repos/${env.GH_REPO}`);
+      const defaultBranch: string = repoInfo?.default_branch || "main";
+      let baseSha: string | undefined;
+      try {
+        const ref: any = await ghApi(`/repos/${env.GH_REPO}/git/ref/heads/${defaultBranch}`);
+        baseSha = ref?.object?.sha;
+      } catch (e: any) {
+        // Fall back to "main" then "master" if the default is weird.
+        for (const candidate of ["main", "master"]) {
+          if (candidate === defaultBranch) continue;
+          try {
+            const ref: any = await ghApi(`/repos/${env.GH_REPO}/git/ref/heads/${candidate}`);
+            baseSha = ref?.object?.sha;
+            if (baseSha) break;
+          } catch { /* try next */ }
+        }
+      }
+      if (!baseSha) throw new Error("Could not resolve default branch SHA");
       try {
         await ghApi(`/repos/${env.GH_REPO}/git/refs`, {
           method: "POST",
-          body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: mainSha }),
+          body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: baseSha }),
         });
       } catch (err: any) {
         const msg = String(err?.message ?? err);
         if (!msg.includes("Reference already exists") && !msg.includes("422")) throw err;
       }
-      pushHistory("branch-create", true, `Created branch ${branch} from main`);
+      pushHistory("branch-create", true, `Created branch ${branch} from ${defaultBranch}`);
     } catch (err: any) {
       pushHistory("branch-create", false, `Failed to create branch: ${err?.message ?? err}`);
       agent.status = "error";
@@ -1816,12 +1879,21 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
         createdAt: new Date().toISOString(),
       }, null, 2);
       const base64 = btoa(unescape(encodeURIComponent(configJson)));
+      // If the file already exists on this branch (e.g. from a previous
+      // errored attempt that left a config), GitHub requires the
+      // existing file's sha to update it. Look it up first.
+      let existingSha: string | undefined;
+      try {
+        const existing: any = await ghApi(`/repos/${env.GH_REPO}/contents/agent-data/config.json?ref=${encodeURIComponent(branch)}`);
+        if (existing?.sha) existingSha = existing.sha;
+      } catch { /* file doesn't exist yet — first write */ }
       const r: any = await ghApi(`/repos/${env.GH_REPO}/contents/agent-data/config.json`, {
         method: "PUT",
         body: JSON.stringify({
           message: `agent: initialize ${sanitized}`,
           content: base64,
           branch,
+          ...(existingSha ? { sha: existingSha } : {}),
         }),
       });
       pushHistory("config-commit", true, `Committed agent-data/config.json`, { sha: r?.content?.sha });
