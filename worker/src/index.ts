@@ -1770,6 +1770,21 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
     // underlying GitHub + Cloudflare resources are globally unique.
     const existing = (await env.ARTIFACTS.get(`agent:${sanitized}`, { type: "json" })) as AgentRecord | null;
     if (existing) {
+      // IDEMPOTENT PATH: active agent with the same customDomain.
+      // The web flow often re-clicks Deploy or refreshes; just return
+      // the existing record. The shortId-ized branch + Pages project
+      // mean the user could also call force:true to spin up a NEW
+      // branch/project under the same friendly name — but for the
+      // common "click twice" case we should be a no-op.
+      if (existing.status === "active" && existing.customDomain === body.customDomain) {
+        return jsonRespC({
+          ok: true,
+          agent: existing,
+          url: `https://${existing.customDomain}`,
+          pagesUrl: `https://${existing.pagesProjectName}.pages.dev`,
+          idempotent: true,
+        });
+      }
       // Allow retry when the previous attempt errored (e.g. user wasn't
       // signed in to the GitHub App yet, or the underlying branch +
       // Pages project were deleted out-of-band from the web UI). Only
@@ -1794,7 +1809,7 @@ async function handleCf(env: Env, request: Request): Promise<Response> {
           await env.ARTIFACTS.delete(`agent-domain:${existing.customDomain}`);
         } else {
           return jsonRespC({
-            error: `Agent '${sanitized}' already exists and is active. Pass force: true to recreate it.`,
+            error: `Agent '${sanitized}' already exists and is active${existing.customDomain !== body.customDomain ? ` with a different domain (${existing.customDomain})` : ""}. Pass force: true to recreate it.`,
             agent: existing,
             hint: `Or use a different name — branches are scoped per CF account, but the underlying GitHub branch + Pages project get a unique shortId suffix.`,
           }, 409);

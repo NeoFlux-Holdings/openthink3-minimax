@@ -187,7 +187,10 @@ export const useDeployFlow = () => {
       const finalUrl = data.url ?? data.agent?.customDomain ? `https://${data.agent.customDomain}` : null;
       const branch = data.agent?.branch ?? `agent/${agentName}`;
       const project = data.agent?.pagesProjectName ?? `agent-${agentName}`;
-      updateStep('attach', { status: 'done', detail: `${project} (branch ${branch}) → ${customDomain}` });
+      const detail = data.idempotent
+        ? `Already provisioned: ${project} (branch ${branch}) → ${customDomain}`
+        : `${project} (branch ${branch}) → ${customDomain}`;
+      updateStep('attach', { status: 'done', detail });
       try { localStorage.setItem('openthink_last_agent', JSON.stringify(data.agent)); } catch { /* ignore */ }
       return finalUrl;
     } catch (err) {
