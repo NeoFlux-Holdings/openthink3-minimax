@@ -617,6 +617,16 @@ export const DeployProgress: React.FC<{
           <span style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)', textAlign: 'center' }}>
             {targetUrl}
           </span>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            style={{ marginTop: '8px' }}
+            onClick={() => {
+              if (typeof window !== 'undefined') window.location.reload();
+            }}
+          >
+            Deploy another agent
+          </button>
         </div>
       )}
 

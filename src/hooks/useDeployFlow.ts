@@ -225,7 +225,11 @@ export const useDeployFlow = () => {
       if (url) setAgentUrl(url);
       localStorage.setItem('openthink_api_url', 'https://openthink3-worker.thomas-zarebczan.workers.dev');
       localStorage.setItem(STORAGE_KEYS.customDomain, finalDomain);
-      setIsDeploying(false);
+      // Keep isDeploying=true on success so the DeployProgress (which
+      // now shows all-green steps + the agentUrl link) stays visible
+      // instead of bouncing the user back to the Review & Deploy form.
+      // Only clear it on error so the user can retry.
+      if (!url) setIsDeploying(false);
       return;
     }
 
@@ -307,7 +311,9 @@ export const useDeployFlow = () => {
           const url = await provisionAgent(agentName, finalDomain);
           updateStep('open', { status: 'done', detail: url ?? `https://${finalDomain}` });
           if (url) setAgentUrl(url);
-          setIsDeploying(false);
+          // Keep isDeploying=true on success so the user keeps seeing
+          // the all-green progress + their deployed URL link.
+          if (!url) setIsDeploying(false);
         }
         if (data.status === 'error') {
           const running = deploySteps.find(s => s.status === 'running');
