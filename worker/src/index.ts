@@ -795,7 +795,12 @@ export default {
         return jsonRespC({ error: "GITHUB_APP_ID/PRIVATE_KEY/INSTALL_TOKEN_KEY not configured on this worker" }, 503);
       }
       const listResp = await fetch(`https://api.github.com/orgs/${encodeURIComponent(org)}/installations`, {
-        headers: { Authorization: `Bearer ${operatorPat}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" },
+        headers: {
+          Authorization: `Bearer ${operatorPat}`,
+          Accept: "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28",
+          "User-Agent": "openthink3-worker",
+        },
       });
       if (!listResp.ok) {
         const t = await listResp.text();
@@ -1220,10 +1225,15 @@ async function mintAndStorePlatformToken(env: Env, installationId: string, accou
         Authorization: `Bearer ${jwt}`,
         Accept: "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "openthink3-worker",
       },
     },
   );
-  const data: any = await r.json();
+  const text = await r.text();
+  let data: any;
+  try { data = JSON.parse(text); } catch {
+    throw new Error(`mint installation token failed: ${r.status} ${text.slice(0, 200)}`);
+  }
   if (!r.ok || !data?.token) {
     throw new Error(`mint installation token failed: ${r.status} ${JSON.stringify(data).slice(0, 300)}`);
   }
